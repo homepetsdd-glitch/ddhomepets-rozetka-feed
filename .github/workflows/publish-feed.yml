@@ -1,5 +1,3 @@
-name: Publish Rozetka feed
-
 on:
   workflow_dispatch:
   schedule:
@@ -23,19 +21,35 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Download Prom XML
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Generate filtered Rozetka XML
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
-        run: |
-          mkdir -p _site
-          curl --fail --location --silent --show-error "$PROM_SOURCE_URL" -o _site/feed.xml
+        run: node generate-feed.mjs
 
-      - name: Check XML
+      - name: Validate generated XML
         run: |
           python3 - <<'PY'
+          import json
           import xml.etree.ElementTree as ET
-          ET.parse("_site/feed.xml")
-          print("XML OK")
+
+          root = ET.parse("_site/feed.xml").getroot()
+          offers = root.findall(".//offer")
+          if len(offers) < 3000:
+              raise SystemExit(f"Safety stop: only {len(offers)} offers in feed")
+
+          with open("_site/stats.json", "r", encoding="utf-8") as f:
+              stats = json.load(f)
+
+          print(f"XML OK: {len(offers)} offers")
+          print(json.dumps(stats, ensure_ascii=False, indent=2))
           PY
 
       - name: Setup Pages
