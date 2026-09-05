@@ -52,6 +52,11 @@ jobs:
           print(json.dumps(stats, ensure_ascii=False, indent=2))
           PY
 
+      - name: Copy WAUDOG images to site
+        run: |
+          mkdir -p _site/waudog-images
+          cp -r waudog-images/* _site/waudog-images/
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
