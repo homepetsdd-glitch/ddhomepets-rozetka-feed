@@ -459,7 +459,47 @@ function setMainPrice(xml, value) {
   // Захисний варіант для нетипового XML без <price>.
   return xml.replace(/(<offer\b[^>]*>)/i, `$1<price>${value}</price>`);
 }
+function applyRozetkaMarkup(offerXml, stats) {
+  const priceRaw = getTagValue(offerXml, "price");
+  if (!priceRaw) return offerXml;
 
+  const price = Number(
+    String(priceRaw)
+      .replace(/\s/g, "")
+      .replace(",", ".")
+  );
+
+  if (!Number.isFinite(price) || price <= 0) {
+    return offerXml;
+  }
+
+  const vendor = String(getTagValue(offerXml, "vendor") || "")
+    .trim()
+    .toLowerCase();
+
+  // Товари Collar / CoLLaR — без націнки
+  if (vendor === "collar") {
+    return offerXml;
+  }
+
+  let percent;
+
+  if (price <= 500) {
+    percent = 0.07;
+  } else if (price <= 1500) {
+    percent = 0.05;
+  } else {
+    percent = 0.03;
+  }
+
+  const newPrice = Math.round(price * (1 + percent));
+
+  if (newPrice !== price) {
+    stats.prices_marked_up = (stats.prices_marked_up || 0) + 1;
+  }
+
+  return setMainPrice(offerXml, String(newPrice));
+}
 function removePromDiscount(offerXml, stats) {
   let updated = offerXml;
 
@@ -738,6 +778,7 @@ async function buildFeed() {
     }
 
     offer = removePromDiscount(offer, stats);
+    offer = applyRozetkaMarkup(offer, stats);
 
     // Всі точкові правила застосовуємо за СТАРИМ target OFFERID,
     // бо саме до нього прив'язані модерація й картка Rozetka.
