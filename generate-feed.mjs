@@ -1258,7 +1258,15 @@ function buildCollarPhotoGallery(report) {
     margin-bottom: 25px;
     font-size: 14px;
   }
+.filters {
+  margin-bottom: 20px;
+}
 
+.filters button {
+  margin-right: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
   .card {
     background: white;
     border: 2px solid #ddd;
@@ -1318,9 +1326,24 @@ function buildCollarPhotoGallery(report) {
 Червона рамка = товар входить у PHOTO_FIX і його перше фото зараз видаляється генератором.
 Фото показані в оригінальному порядку Prom.
 </div>
-
+<div class="filters">
+  <button onclick="showAll()">Показати всі</button>
+  <button onclick="showPhotoFix()">Тільки PHOTO_FIX: TRUE</button>
+</div>
 ${cards}
+<script>
+  function showAll() {
+    document.querySelectorAll(".card").forEach(card => {
+      card.style.display = "";
+    });
+  }
 
+  function showPhotoFix() {
+    document.querySelectorAll(".card").forEach(card => {
+      card.style.display = card.classList.contains("photo-fix") ? "" : "none";
+    });
+  }
+</script>
 </body>
 </html>`;
 }// GitHub Actions CLI entry point: формує статичний feed.xml без Cloudflare CPU-ліміту.
