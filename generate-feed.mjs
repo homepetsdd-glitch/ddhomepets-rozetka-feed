@@ -782,10 +782,14 @@ async function buildFeed() {
 
     // Всі точкові правила застосовуємо за СТАРИМ target OFFERID,
     // бо саме до нього прив'язані модерація й картка Rozetka.
-    if (photoFixSet.has(targetId)) {
-      stats.photo_fix_matched++;
-      offer = removeFirstPicture(offer, stats);
-    }
+   const vendorForPhotoFix = String(getTagValue(offer, "vendor") || "")
+  .trim()
+  .toLowerCase();
+
+if (photoFixSet.has(targetId) && vendorForPhotoFix !== "collar") {
+  stats.photo_fix_matched++;
+  offer = removeFirstPicture(offer, stats);
+}
 
     offer = applyTitleFix(offer, targetId, stats);
     offer = dedupePictures(offer, stats);
