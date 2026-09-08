@@ -1209,12 +1209,32 @@ function escapeHtml(value) {
 
 function buildCollarPhotoGallery(report) {
   const cards = report.map((item) => {
-    const images = item.pictures.map((picture) => `
-      <div class="photo">
-        <div class="position">Фото №${picture.position}</div>
-        <img src="${escapeHtml(picture.url)}" loading="lazy">
-      </div>
-    `).join("");
+const images = item.pictures.map((picture) => `
+  <div class="photo">
+    <div class="position">Фото №${picture.position}</div>
+
+    <img
+      src="${escapeHtml(picture.url)}"
+      loading="lazy"
+      onclick="selectMainPhoto(
+        '${escapeHtml(item.rozetka_offer_id)}',
+        ${picture.position},
+        this
+      )"
+    >
+
+    <button
+      class="main-photo-button"
+      onclick="selectMainPhoto(
+        '${escapeHtml(item.rozetka_offer_id)}',
+        ${picture.position},
+        this
+      )"
+    >
+      ⭐ Зробити головним
+    </button>
+  </div>
+`).join("");
 
     return `
       <section class="card ${item.photo_fix_target ? "photo-fix" : ""}">
@@ -1274,6 +1294,20 @@ function buildCollarPhotoGallery(report) {
   margin-right: 10px;
   padding: 10px 14px;
   cursor: pointer;
+}
+.main-photo-button {
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 5px;
+  cursor: pointer;
+}
+
+.photo.selected-main img {
+  outline: 4px solid #333;
+}
+
+.photo.selected-main .main-photo-button {
+  font-weight: bold;
 }
   .card {
     background: white;
@@ -1373,7 +1407,23 @@ ${cards}
       card.style.display = card.dataset.review === "problem" ? "" : "none";
     });
   }
+function selectMainPhoto(id, position, element) {
+  localStorage.setItem(
+    "collar_main_photo_" + id,
+    String(position)
+  );
 
+  const card = element.closest(".card");
+
+  card.querySelectorAll(".photo").forEach(photo => {
+    photo.classList.remove("selected-main");
+  });
+
+  const photo = element.closest(".photo");
+  photo.classList.add("selected-main");
+
+  card.dataset.mainPhoto = String(position);
+}
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".card").forEach(card => {
       const idText = card.querySelector(".info div")?.textContent || "";
@@ -1382,7 +1432,18 @@ ${cards}
 
       const id = match[1];
       const saved = localStorage.getItem("collar_review_" + id);
+const savedMainPhoto = localStorage.getItem("collar_main_photo_" + id);
 
+if (savedMainPhoto) {
+  card.dataset.mainPhoto = savedMainPhoto;
+
+  const photos = card.querySelectorAll(".photo");
+  const index = Number(savedMainPhoto) - 1;
+
+  if (photos[index]) {
+    photos[index].classList.add("selected-main");
+  }
+}
       if (saved) {
         card.dataset.review = saved;
 
