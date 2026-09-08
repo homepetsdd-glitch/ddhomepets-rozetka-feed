@@ -1228,7 +1228,15 @@ function buildCollarPhotoGallery(report) {
             PHOTO_FIX: ${item.photo_fix_target ? "TRUE — перше фото видаляється" : "FALSE"}
           </div>
         </div>
+<div class="review-buttons">
+  <button onclick="markReview('${escapeHtml(item.rozetka_offer_id)}', 'ok', this)">
+    ✅ Фото №1 нормальне
+  </button>
 
+  <button onclick="markReview('${escapeHtml(item.rozetka_offer_id)}', 'problem', this)">
+    ⚠️ Треба виправити головне фото
+  </button>
+</div>
         <div class="photos">
           ${images}
         </div>
@@ -1329,6 +1337,7 @@ function buildCollarPhotoGallery(report) {
 <div class="filters">
   <button onclick="showAll()">Показати всі</button>
   <button onclick="showPhotoFix()">Тільки PHOTO_FIX: TRUE</button>
+   <button onclick="showProblems()">Тільки позначені проблемні</button>
 </div>
 ${cards}
 <script>
@@ -1343,6 +1352,54 @@ ${cards}
       card.style.display = card.classList.contains("photo-fix") ? "" : "none";
     });
   }
+
+  function markReview(id, status, button) {
+    localStorage.setItem("collar_review_" + id, status);
+
+    const card = button.closest(".card");
+    card.dataset.review = status;
+
+    card.querySelectorAll(".review-buttons button").forEach(btn => {
+      btn.style.fontWeight = "normal";
+      btn.style.outline = "none";
+    });
+
+    button.style.fontWeight = "bold";
+    button.style.outline = "3px solid #333";
+  }
+
+  function showProblems() {
+    document.querySelectorAll(".card").forEach(card => {
+      card.style.display = card.dataset.review === "problem" ? "" : "none";
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll(".card").forEach(card => {
+      const idText = card.querySelector(".info div")?.textContent || "";
+      const match = idText.match(/Rozetka ID:\s*(\d+)/);
+      if (!match) return;
+
+      const id = match[1];
+      const saved = localStorage.getItem("collar_review_" + id);
+
+      if (saved) {
+        card.dataset.review = saved;
+
+        const buttons = card.querySelectorAll(".review-buttons button");
+
+        if (saved === "ok" && buttons[0]) {
+          buttons[0].style.fontWeight = "bold";
+          buttons[0].style.outline = "3px solid #333";
+        }
+
+        if (saved === "problem" && buttons[1]) {
+          buttons[1].style.fontWeight = "bold";
+          buttons[1].style.outline = "3px solid #333";
+        }
+      }
+    });
+  });
 </script>
 </body>
 </html>`;
