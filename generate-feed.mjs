@@ -1150,12 +1150,59 @@ async function buildTitleFixFeed() {
   stats.generated_offers = kept.length;
   return { xml: head + "\n" + kept.join("\n") + "\n" + tail, stats };
 }
+async function buildCollarPhotoReport() {
+  const photoFixSet = await loadPhotoFixSet();
 
+  const response = await fetch(SOURCE_URL, {
+    headers: {
+      "User-Agent": "D&D-Home-Pets-Rozetka-Feed/13.0",
+      "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Prom XML error: ${response.status} ${response.statusText}`);
+  }
+
+  const xml = await response.text();
+  const offerRegex = /<offer\b[\s\S]*?<\/offer>/gi;
+  const report = [];
+
+  let match;
+  while ((match = offerRegex.exec(xml)) !== null) {
+    const offer = match[0];
+
+    const vendor = String(getTagValue(offer, "vendor") || "")
+      .trim()
+      .toLowerCase();
+
+    if (vendor !== "collar") continue;
+
+    const sourceId = getOfferId(offer);
+    const targetId = getTargetOfferId(sourceId);
+    const pictures = getPictures(offer);
+
+    report.push({
+      source_id: sourceId,
+      rozetka_offer_id: targetId,
+      article: getTagValue(offer, "article"),
+      name: getTagValue(offer, "name_ua") || getTagValue(offer, "name"),
+      photo_fix_target: photoFixSet.has(String(targetId)),
+      pictures_count: pictures.length,
+      pictures: pictures.map((url, index) => ({
+        position: index + 1,
+        url,
+      })),
+    });
+  }
+
+  return report;
+}
 // GitHub Actions CLI entry point: формує статичний feed.xml без Cloudflare CPU-ліміту.
 async function main() {
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { xml, stats } = await buildFeed();
-
+const collarPhotoReport = await buildCollarPhotoReport();
   // Мінімальні запобіжники перед публікацією.
   if (!xml.includes("<offers>") || !xml.includes("</offers>")) {
     throw new Error("Generated XML has no <offers> block");
@@ -1167,7 +1214,11 @@ async function main() {
   await mkdir("_site", { recursive: true });
   await writeFile("_site/feed.xml", xml, "utf8");
   await writeFile("_site/stats.json", JSON.stringify(stats, null, 2) + "\n", "utf8");
-
+await writeFile(
+  "_site/collar-photo-report.json",
+  JSON.stringify(collarPhotoReport, null, 2) + "\n",
+  "utf8"
+);
   console.log("Rozetka feed generated successfully");
   console.log(JSON.stringify(stats, null, 2));
 }
