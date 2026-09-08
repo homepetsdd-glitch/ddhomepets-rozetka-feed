@@ -1233,6 +1233,16 @@ const images = item.pictures.map((picture) => `
     >
       ⭐ Зробити головним
     </button>
+    <button
+  class="end-photo-button"
+  onclick="selectEndPhoto(
+    '${escapeHtml(item.rozetka_offer_id)}',
+    ${picture.position},
+    this
+  )"
+>
+  📐 В кінець
+</button>
   </div>
 `).join("");
 
@@ -1294,6 +1304,20 @@ const images = item.pictures.map((picture) => `
   margin-right: 10px;
   padding: 10px 14px;
   cursor: pointer;
+}
+.end-photo-button {
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 5px;
+  cursor: pointer;
+}
+
+.photo.selected-end img {
+  outline: 4px dashed #333;
+}
+
+.photo.selected-end .end-photo-button {
+  font-weight: bold;
 }
 .main-photo-button {
   width: 100%;
@@ -1424,6 +1448,23 @@ function selectMainPhoto(id, position, element) {
 
   card.dataset.mainPhoto = String(position);
 }
+function selectEndPhoto(id, position, element) {
+  localStorage.setItem(
+    "collar_end_photo_" + id,
+    String(position)
+  );
+
+  const card = element.closest(".card");
+
+  card.querySelectorAll(".photo").forEach(photo => {
+    photo.classList.remove("selected-end");
+  });
+
+  const photo = element.closest(".photo");
+  photo.classList.add("selected-end");
+
+  card.dataset.endPhoto = String(position);
+}
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".card").forEach(card => {
       const idText = card.querySelector(".info div")?.textContent || "";
@@ -1442,6 +1483,18 @@ if (savedMainPhoto) {
 
   if (photos[index]) {
     photos[index].classList.add("selected-main");
+  }
+}
+const savedEndPhoto = localStorage.getItem("collar_end_photo_" + id);
+
+if (savedEndPhoto) {
+  card.dataset.endPhoto = savedEndPhoto;
+
+  const photos = card.querySelectorAll(".photo");
+  const index = Number(savedEndPhoto) - 1;
+
+  if (photos[index]) {
+    photos[index].classList.add("selected-end");
   }
 }
       if (saved) {
