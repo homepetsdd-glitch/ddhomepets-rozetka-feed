@@ -1198,12 +1198,137 @@ async function buildCollarPhotoReport() {
 
   return report;
 }
-// GitHub Actions CLI entry point: формує статичний feed.xml без Cloudflare CPU-ліміту.
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function buildCollarPhotoGallery(report) {
+  const cards = report.map((item) => {
+    const images = item.pictures.map((picture) => `
+      <div class="photo">
+        <div class="position">Фото №${picture.position}</div>
+        <img src="${escapeHtml(picture.url)}" loading="lazy">
+      </div>
+    `).join("");
+
+    return `
+      <section class="card ${item.photo_fix_target ? "photo-fix" : ""}">
+        <div class="info">
+          <h2>${escapeHtml(item.name)}</h2>
+          <div><b>Rozetka ID:</b> ${escapeHtml(item.rozetka_offer_id)}</div>
+          <div><b>Prom ID:</b> ${escapeHtml(item.source_id)}</div>
+          <div><b>Артикул:</b> ${escapeHtml(item.article)}</div>
+          <div><b>Кількість фото:</b> ${item.pictures_count}</div>
+          <div class="status">
+            PHOTO_FIX: ${item.photo_fix_target ? "TRUE — перше фото видаляється" : "FALSE"}
+          </div>
+        </div>
+
+        <div class="photos">
+          ${images}
+        </div>
+      </section>
+    `;
+  }).join("");
+
+  return `<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Collar photo report</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background: #f5f5f5;
+    color: #222;
+  }
+
+  h1 {
+    margin-bottom: 8px;
+  }
+
+  .note {
+    margin-bottom: 25px;
+    font-size: 14px;
+  }
+
+  .card {
+    background: white;
+    border: 2px solid #ddd;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 22px;
+  }
+
+  .card.photo-fix {
+    border-color: #d33;
+  }
+
+  .info h2 {
+    margin: 0 0 10px;
+    font-size: 18px;
+  }
+
+  .status {
+    margin-top: 8px;
+    font-weight: bold;
+  }
+
+  .photo-fix .status {
+    color: #c00;
+  }
+
+  .photos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 15px;
+  }
+
+  .photo {
+    width: 190px;
+  }
+
+  .photo img {
+    width: 190px;
+    height: 190px;
+    object-fit: contain;
+    background: white;
+    border: 1px solid #ccc;
+  }
+
+  .position {
+    font-weight: bold;
+    margin-bottom: 5px;
+  }
+</style>
+</head>
+
+<body>
+<h1>Collar — перевірка порядку фото</h1>
+
+<div class="note">
+Червона рамка = товар входить у PHOTO_FIX і його перше фото зараз видаляється генератором.
+Фото показані в оригінальному порядку Prom.
+</div>
+
+${cards}
+
+</body>
+</html>`;
+}// GitHub Actions CLI entry point: формує статичний feed.xml без Cloudflare CPU-ліміту.
 async function main() {
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { xml, stats } = await buildFeed();
 const collarPhotoReport = await buildCollarPhotoReport();
-  // Мінімальні запобіжники перед публікацією.
+const collarPhotoGallery = buildCollarPhotoGallery(collarPhotoReport);  // Мінімальні запобіжники перед публікацією.
   if (!xml.includes("<offers>") || !xml.includes("</offers>")) {
     throw new Error("Generated XML has no <offers> block");
   }
@@ -1217,6 +1342,11 @@ const collarPhotoReport = await buildCollarPhotoReport();
 await writeFile(
   "_site/collar-photo-report.json",
   JSON.stringify(collarPhotoReport, null, 2) + "\n",
+  "utf8"
+);
+  await writeFile(
+  "_site/collar-photo-gallery.html",
+  collarPhotoGallery,
   "utf8"
 );
   console.log("Rozetka feed generated successfully");
