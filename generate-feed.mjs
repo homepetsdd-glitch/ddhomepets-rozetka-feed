@@ -1247,7 +1247,10 @@ const images = item.pictures.map((picture) => `
 `).join("");
 
     return `
-      <section class="card ${item.photo_fix_target ? "photo-fix" : ""}">
+      <section
+  class="card ${item.photo_fix_target ? "photo-fix" : ""}"
+  data-id="${escapeHtml(item.rozetka_offer_id)}"
+>
         <div class="info">
           <h2>${escapeHtml(item.name)}</h2>
           <div><b>Rozetka ID:</b> ${escapeHtml(item.rozetka_offer_id)}</div>
@@ -1467,11 +1470,8 @@ function selectEndPhoto(id, position, element) {
 }
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".card").forEach(card => {
-      const idText = card.querySelector(".info div")?.textContent || "";
-      const match = idText.match(/Rozetka ID:\s*(\d+)/);
-      if (!match) return;
-
-      const id = match[1];
+      const id = card.dataset.id;
+if (!id) return;
       const saved = localStorage.getItem("collar_review_" + id);
 const savedMainPhoto = localStorage.getItem("collar_main_photo_" + id);
 
