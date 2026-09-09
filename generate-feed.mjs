@@ -1399,6 +1399,7 @@ const images = item.pictures.map((picture) => `
   <button onclick="showAll()">Показати всі</button>
   <button onclick="showPhotoFix()">Тільки PHOTO_FIX: TRUE</button>
    <button onclick="showProblems()">Тільки позначені проблемні</button>
+   <button onclick="exportPhotoChoices()">⬇️ Експортувати вибір</button>
 </div>
 ${cards}
 <script>
@@ -1467,6 +1468,38 @@ function selectEndPhoto(id, position, element) {
   photo.classList.add("selected-end");
 
   card.dataset.endPhoto = String(position);
+}
+function exportPhotoChoices() {
+  const result = {};
+
+  document.querySelectorAll(".card").forEach(card => {
+    const id = card.dataset.id;
+    if (!id) return;
+
+    const mainPhoto = localStorage.getItem("collar_main_photo_" + id);
+    const endPhoto = localStorage.getItem("collar_end_photo_" + id);
+    const review = localStorage.getItem("collar_review_" + id);
+
+    if (mainPhoto || endPhoto || review) {
+      result[id] = {
+        main_photo: mainPhoto ? Number(mainPhoto) : null,
+        end_photo: endPhoto ? Number(endPhoto) : null,
+        review: review || null
+      };
+    }
+  });
+
+  const blob = new Blob(
+    [JSON.stringify(result, null, 2)],
+    { type: "application/json" }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "collar-photo-choices.json";
+  a.click();
+  URL.revokeObjectURL(url);
 }
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".card").forEach(card => {
