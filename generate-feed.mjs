@@ -1283,8 +1283,7 @@ async function buildCollarPhotoReport() {
 
     // Нас зараз цікавлять тільки товари зі старого PHOTO_FIX
     if (!photoFixSet.has(String(targetId))) continue;
-const vendor = getTagValue(offer, "vendor").trim().toLowerCase();
-
+const vendor = (getTagValue(offer, "vendor") || "").trim().toLowerCase();
 const name = (
   getTagValue(offer, "name_ua") ||
   getTagValue(offer, "name") ||
