@@ -1283,7 +1283,35 @@ async function buildCollarPhotoReport() {
 
     // Нас зараз цікавлять тільки товари зі старого PHOTO_FIX
     if (!photoFixSet.has(String(targetId))) continue;
+const vendor = getTagValue(offer, "vendor").trim().toLowerCase();
 
+const name = (
+  getTagValue(offer, "name_ua") ||
+  getTagValue(offer, "name") ||
+  ""
+).toLowerCase();
+
+const collarFamilyWords = [
+  "collar",
+  "waudog",
+  "waucat",
+  "evolutor",
+  "dog extreme",
+  "dog extremе",
+  "airyvest",
+  "puller",
+  "liker",
+  "flyber",
+  "pitchdog",
+  "superium"
+];
+
+const isCollarFamily =
+  vendor === "collar" ||
+  vendor === "collar company" ||
+  collarFamilyWords.some(word => name.includes(word));
+
+if (!isCollarFamily) continue;
     // Старі товари, які вже вручну перевірені, вдруге не показуємо
     if (collarPhotoChoices[String(targetId)]) continue;
 
