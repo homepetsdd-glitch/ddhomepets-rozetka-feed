@@ -1246,7 +1246,12 @@ async function buildTitleFixFeed() {
   return { xml: head + "\n" + kept.join("\n") + "\n" + tail, stats };
 }
 async function buildCollarPhotoReport() {
-  const photoFixSet = await loadPhotoFixSet();
+  const [whitelist, photoFixSet] = await Promise.all([
+    loadWhitelist(),
+    loadPhotoFixSet(),
+  ]);
+
+  const collarPhotoChoices = await loadCollarPhotoChoices();
 
   const response = await fetch(SOURCE_URL, {
     headers: {
@@ -1256,7 +1261,9 @@ async function buildCollarPhotoReport() {
   });
 
   if (!response.ok) {
-    throw new Error(`Prom XML error: ${response.status} ${response.statusText}`);
+    throw new Error(
+      `Prom XML error: ${response.status} ${response.statusText}`
+    );
   }
 
   const xml = await response.text();
@@ -1264,25 +1271,37 @@ async function buildCollarPhotoReport() {
   const report = [];
 
   let match;
+
   while ((match = offerRegex.exec(xml)) !== null) {
     const offer = match[0];
 
-    const vendor = String(getTagValue(offer, "vendor") || "")
-      .trim()
-      .toLowerCase();
-
-    if (vendor !== "collar") continue;
-
     const sourceId = getOfferId(offer);
     const targetId = getTargetOfferId(sourceId);
+
+    // Беремо тільки товари, які реально входять у каталог Rozetka
+    if (!whitelist.has(String(targetId))) continue;
+
+    // Нас зараз цікавлять тільки товари зі старого PHOTO_FIX
+    if (!photoFixSet.has(String(targetId))) continue;
+
+    // Старі товари, які вже вручну перевірені, вдруге не показуємо
+    if (collarPhotoChoices[String(targetId)]) continue;
+
     const pictures = getPictures(offer);
+
+    // Якщо фото одне — порядок виправляти немає сенсу
+    if (pictures.length < 2) continue;
 
     report.push({
       source_id: sourceId,
       rozetka_offer_id: targetId,
       article: getTagValue(offer, "article"),
-      name: getTagValue(offer, "name_ua") || getTagValue(offer, "name"),
-      photo_fix_target: photoFixSet.has(String(targetId)),
+      name:
+        getTagValue(offer, "name_ua") ||
+        getTagValue(offer, "name"),
+      vendor: getTagValue(offer, "vendor"),
+      photo_fix_target: true,
+      manual_choice: false,
       pictures_count: pictures.length,
       pictures: pictures.map((url, index) => ({
         position: index + 1,
