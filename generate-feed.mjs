@@ -277,7 +277,83 @@ async function loadPhotoFixSet() {
     text.split("\n").map(x => x.trim()).filter(Boolean)
   );
 }
+async function loadCollarPhotoChoices() {
+  const { readFile } = await import("node:fs/promises");
 
+  const text = await readFile(
+    new URL("./collar-photo-choices.json", import.meta.url),
+    "utf8"
+  );
+
+  return JSON.parse(text);
+}
+
+function applyCollarPhotoChoice(
+  offerXml,
+  choice,
+  removeOriginalFirst,
+  stats
+) {
+  const pictureRegex = /<picture\b[^>]*>[\s\S]*?<\/picture>/gi;
+  const pictures = offerXml.match(pictureRegex) || [];
+
+  if (!pictures.length || !choice) return offerXml;
+
+  const mainPos = Number(choice.main_photo || 0);
+  const endPos = Number(choice.end_photo || 0);
+
+  let indexed = pictures.map((tag, index) => ({
+    tag,
+    position: index + 1
+  }));
+
+  // Якщо товар був у старому PHOTO_FIX і вручну НЕ вибране фото №1,
+  // старе перше фото прибираємо.
+  if (removeOriginalFirst) {
+    indexed = indexed.filter(item => item.position !== 1);
+    stats.collar_manual_first_removed =
+      (stats.collar_manual_first_removed || 0) + 1;
+  }
+
+  let main = null;
+  let end = null;
+
+  if (mainPos > 0) {
+    main = indexed.find(item => item.position === mainPos) || null;
+  }
+
+  if (endPos > 0 && endPos !== mainPos) {
+    end = indexed.find(item => item.position === endPos) || null;
+  }
+
+  let middle = indexed.filter(item => {
+    if (main && item.position === main.position) return false;
+    if (end && item.position === end.position) return false;
+    return true;
+  });
+
+  const ordered = [];
+
+  if (main) ordered.push(main);
+  ordered.push(...middle);
+  if (end) ordered.push(end);
+
+  if (!ordered.length) return offerXml;
+
+  const firstPictureIndex = offerXml.search(pictureRegex);
+  if (firstPictureIndex < 0) return offerXml;
+
+  const withoutPictures = offerXml.replace(pictureRegex, "");
+
+  stats.collar_photo_choices_applied =
+    (stats.collar_photo_choices_applied || 0) + 1;
+
+  return (
+    withoutPictures.slice(0, firstPictureIndex) +
+    ordered.map(item => item.tag).join("\n") +
+    withoutPictures.slice(firstPictureIndex)
+  );
+}
 function getPictures(offerXml) {
   const out = [];
   const re = /<picture\b[^>]*>([\s\S]*?)<\/picture>/gi;
@@ -651,7 +727,7 @@ async function buildFeed() {
     loadWhitelist(),
     loadPhotoFixSet(),
   ]);
-
+const collarPhotoChoices = await loadCollarPhotoChoices();
   const response = await fetch(SOURCE_URL, {
     headers: {
       "User-Agent": "D&D-Home-Pets-Rozetka-Feed/13.0",
@@ -782,8 +858,27 @@ async function buildFeed() {
 
     // Всі точкові правила застосовуємо за СТАРИМ target OFFERID,
     // бо саме до нього прив'язані модерація й картка Rozetka.
-   if (photoFixSet.has(targetId)) {
+ const collarPhotoChoice =
+  collarPhotoChoices[String(targetId)] || null;
+
+const isPhotoFixTarget = photoFixSet.has(targetId);
+
+if (isPhotoFixTarget) {
   stats.photo_fix_matched++;
+}
+
+if (collarPhotoChoice) {
+  const removeOriginalFirst =
+    isPhotoFixTarget &&
+    Number(collarPhotoChoice.main_photo || 0) !== 1;
+
+  offer = applyCollarPhotoChoice(
+    offer,
+    collarPhotoChoice,
+    removeOriginalFirst,
+    stats
+  );
+} else if (isPhotoFixTarget) {
   offer = removeFirstPicture(offer, stats);
 }
 
