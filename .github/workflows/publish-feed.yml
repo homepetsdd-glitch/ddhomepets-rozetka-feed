@@ -32,7 +32,7 @@ jobs:
       - name: Generate filtered Rozetka XML
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
-        run: node generate-feed.mjs
+        run: node run-generate-with-restores.mjs
 
       - name: Validate generated XML
         run: |
