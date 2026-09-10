@@ -1,9 +1,21 @@
 import fs from "node:fs";
+import { gunzipSync } from "node:zlib";
 import { pathToFileURL } from "node:url";
 
 const RESTORE_IDS_FILE = "restore-offerids.txt";
 const SOURCE_FILE = "generate-feed.mjs";
 const TEMP_FILE = ".generate-feed-with-restores.tmp.mjs";
+const LATEST_CHOICES_B64_FILE = "collar-photo-choices.latest.json.gz.b64";
+
+// Rebuild the latest reviewed Collar photo choices before generating the feed.
+// The compact gzip+base64 payload keeps the repository file small while preserving
+// the exact JSON selected during review.
+if (fs.existsSync(LATEST_CHOICES_B64_FILE)) {
+  const encoded = fs.readFileSync(LATEST_CHOICES_B64_FILE, "utf8").trim();
+  const choicesText = gunzipSync(Buffer.from(encoded, "base64")).toString("utf8");
+  JSON.parse(choicesText);
+  fs.writeFileSync("collar-photo-choices.json", choicesText, "utf8");
+}
 
 const restoreText = fs.readFileSync(RESTORE_IDS_FILE, "utf8");
 const restoreIds = [...new Set(
