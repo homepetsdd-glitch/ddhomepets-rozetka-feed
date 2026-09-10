@@ -6,7 +6,12 @@ const SOURCE_FILE = "generate-feed.mjs";
 const TEMP_FILE = ".generate-feed-with-restores.tmp.mjs";
 
 const restoreText = fs.readFileSync(RESTORE_IDS_FILE, "utf8");
-const restoreIds = [...new Set(restoreText.match(/\b\d{10}\b/g) || [])];
+const restoreIds = [...new Set(
+  restoreText
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => /^\d{10}$/.test(line))
+)];
 
 if (restoreIds.length !== 26) {
   throw new Error(`Safety stop: expected 26 restore OFFERIDs, found ${restoreIds.length}`);
