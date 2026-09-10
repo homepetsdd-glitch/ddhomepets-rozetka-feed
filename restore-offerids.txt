@@ -1,5 +1,6 @@
-# 161 active Pricecreator products present in fresh Prom export but missing from current feed
+# 160 active Pricecreator products present in fresh Prom export but missing from current feed
 # Verified against Prom export 2026-09-09 and Pricecreator export 2026-09-10.
+# OFFERID 3043744360 removed: sold item, do not restore to feed.
 3015464062
 3015538403
 3019647078
@@ -10,7 +11,6 @@
 3043616857
 3043633799
 3043735551
-3043744360
 3044321169
 3044351962
 3052661668
