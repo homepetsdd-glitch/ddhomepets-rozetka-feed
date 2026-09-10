@@ -55,6 +55,39 @@ source =
   '  "superium",\n  "supercat"\n];' +
   source.slice(collarPriceMarkerIndex + collarPriceMarker.length);
 
+// Photo-review gallery: after the old PHOTO_FIX batch is reviewed,
+// continue with every unreviewed COLLAR-family product instead of filtering
+// the report down to PHOTO_FIX only. Existing manual choices stay excluded.
+const reportStart = source.indexOf("async function buildCollarPhotoReport()");
+const reportEnd = reportStart >= 0
+  ? source.indexOf("function escapeHtml", reportStart)
+  : -1;
+
+if (reportStart < 0 || reportEnd < 0) {
+  throw new Error("Safety stop: COLLAR photo report function not found");
+}
+
+let reportSource = source.slice(reportStart, reportEnd);
+const photoFixOnlyMarker = `    // Нас зараз цікавлять тільки товари зі старого PHOTO_FIX\n    if (!photoFixSet.has(String(targetId))) continue;\n`;
+if (!reportSource.includes(photoFixOnlyMarker)) {
+  throw new Error("Safety stop: PHOTO_FIX-only report marker not found");
+}
+reportSource = reportSource.replace(
+  photoFixOnlyMarker,
+  `    // Показуємо всі ще не перевірені товари COLLAR-family, не лише старий PHOTO_FIX.\n`
+);
+
+const photoFixTargetMarker = "      photo_fix_target: true,";
+if ((reportSource.match(/photo_fix_target: true,/g) || []).length !== 1) {
+  throw new Error("Safety stop: expected one photo_fix_target marker in report");
+}
+reportSource = reportSource.replace(
+  photoFixTargetMarker,
+  "      photo_fix_target: photoFixSet.has(String(targetId)),"
+);
+
+source = source.slice(0, reportStart) + reportSource + source.slice(reportEnd);
+
 fs.writeFileSync(TEMP_FILE, source, "utf8");
 
 try {
