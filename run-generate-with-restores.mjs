@@ -8,8 +8,8 @@ const TEMP_FILE = ".generate-feed-with-restores.tmp.mjs";
 const restoreText = fs.readFileSync(RESTORE_IDS_FILE, "utf8");
 const restoreIds = [...new Set(restoreText.match(/\b\d{10}\b/g) || [])];
 
-if (restoreIds.length !== 161) {
-  throw new Error(`Safety stop: expected 161 restore OFFERIDs, found ${restoreIds.length}`);
+if (restoreIds.length !== 26) {
+  throw new Error(`Safety stop: expected 26 restore OFFERIDs, found ${restoreIds.length}`);
 }
 
 let source = fs.readFileSync(SOURCE_FILE, "utf8");
