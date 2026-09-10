@@ -550,13 +550,39 @@ function applyRozetkaMarkup(offerXml, stats) {
   }
 
   const vendor = String(getTagValue(offerXml, "vendor") || "")
-    .trim()
-    .toLowerCase();
+  .trim()
+  .toLowerCase();
 
-  // Товари Collar / CoLLaR — без націнки
-  if (vendor === "collar") {
-    return offerXml;
-  }
+const name = (
+  getTagValue(offerXml, "name_ua") ||
+  getTagValue(offerXml, "name") ||
+  ""
+).toLowerCase();
+
+const collarFamilyWords = [
+  "collar",
+  "waudog",
+  "waucat",
+  "evolutor",
+  "dog extreme",
+  "dog extremе",
+  "airyvest",
+  "puller",
+  "liker",
+  "flyber",
+  "pitchdog",
+  "superium"
+];
+
+const isCollarFamily =
+  vendor === "collar" ||
+  vendor === "collar company" ||
+  collarFamilyWords.some(word => name.includes(word));
+
+// Усі товари COLLAR Company — без націнки
+if (isCollarFamily) {
+  return offerXml;
+}
 
   let percent;
 
