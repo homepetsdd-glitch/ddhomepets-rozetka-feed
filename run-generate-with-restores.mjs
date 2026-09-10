@@ -39,6 +39,22 @@ source = source.replace(
   "const isWhitelisted = whitelist.has(targetId) || RESTORE_OFFER_IDS.has(targetId);"
 );
 
+// SuperCat is supplied through COLLAR Company, so it must use the Prom price with no Rozetka markup.
+const markupStart = source.indexOf("function applyRozetkaMarkup");
+const collarPriceMarker = '  "superium"\n];';
+const collarPriceMarkerIndex = markupStart >= 0
+  ? source.indexOf(collarPriceMarker, markupStart)
+  : -1;
+
+if (collarPriceMarkerIndex < 0) {
+  throw new Error("Safety stop: COLLAR price family marker not found");
+}
+
+source =
+  source.slice(0, collarPriceMarkerIndex) +
+  '  "superium",\n  "supercat"\n];' +
+  source.slice(collarPriceMarkerIndex + collarPriceMarker.length);
+
 fs.writeFileSync(TEMP_FILE, source, "utf8");
 
 try {
