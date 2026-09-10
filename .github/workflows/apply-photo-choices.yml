@@ -1,0 +1,27 @@
+name: Apply Collar photo choices
+
+on:
+  push:
+    paths:
+      - '.tmp-photo-choices-20260910/READY'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Rebuild collar-photo-choices.json
+        run: |
+          cat .tmp-photo-choices-20260910/part-* > collar-photo-choices.json
+          python3 -m json.tool collar-photo-choices.json >/dev/null
+      - name: Commit updated choices
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add collar-photo-choices.json
+          git diff --cached --quiet || git commit -m "Update Collar photo choices"
+          git push
