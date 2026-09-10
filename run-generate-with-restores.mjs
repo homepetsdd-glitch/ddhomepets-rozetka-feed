@@ -100,6 +100,18 @@ reportSource = reportSource.replace(
 
 source = source.slice(0, reportStart) + reportSource + source.slice(reportEnd);
 
+// For items explicitly marked review="problem", remove the original first photo
+// whenever a different main photo was selected. This prevents assortment/variant
+// collages from remaining later in the Rozetka gallery after reordering.
+const removeOriginalFirstMarker = `  const removeOriginalFirst =\n    isPhotoFixTarget &&\n    Number(collarPhotoChoice.main_photo || 0) !== 1;`;
+if ((source.match(/const removeOriginalFirst =/g) || []).length !== 1 || !source.includes(removeOriginalFirstMarker)) {
+  throw new Error("Safety stop: removeOriginalFirst marker not found");
+}
+source = source.replace(
+  removeOriginalFirstMarker,
+  `  const removeOriginalFirst =\n    (isPhotoFixTarget || String(collarPhotoChoice.review || "").toLowerCase() === "problem") &&\n    Number(collarPhotoChoice.main_photo || 0) !== 1;`
+);
+
 fs.writeFileSync(TEMP_FILE, source, "utf8");
 
 try {
