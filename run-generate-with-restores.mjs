@@ -127,6 +127,15 @@ reportSource = reportSource.replace(
   `    // Раніше перевірені товари теж показуємо повторно: фото постачальника могли змінитися.\n`
 );
 
+const familyMarker = `const isCollarFamily =\n  vendor === "collar" ||\n  vendor === "collar company" ||\n  collarFamilyWords.some(word => name.includes(word));`;
+if (!reportSource.includes(familyMarker)) {
+  throw new Error("Safety stop: COLLAR report family marker not found");
+}
+reportSource = reportSource.replace(
+  familyMarker,
+  `const isCollarFamily =\n  vendor === "collar" ||\n  vendor === "collar company" ||\n  collarFamilyWords.some(word => vendor.includes(word) || name.includes(word));`
+);
+
 const photoFixTargetMarker = "      photo_fix_target: true,";
 if ((reportSource.match(/photo_fix_target: true,/g) || []).length !== 1) {
   throw new Error("Safety stop: expected one photo_fix_target marker in report");
