@@ -11,6 +11,7 @@ on:
       - "collar-photo-choices.json"
       - "collar-photo-choices-extra.json"
       - "collar-photo-choices.latest.json.gz.b64"
+      - "apply-audit-photo-removals.mjs"
       - "validate-collar-photo-choices.py"
       - "validate-prices.py"
       - ".github/workflows/publish-feed.yml"
