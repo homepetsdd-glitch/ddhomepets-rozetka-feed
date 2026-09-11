@@ -12,6 +12,8 @@ on:
       - "collar-photo-choices-extra.json"
       - "collar-photo-choices.latest.json.gz.b64"
       - "apply-audit-photo-removals.mjs"
+      - "excluded-offerids.txt"
+      - "apply-offer-exclusions.mjs"
       - "validate-collar-photo-choices.py"
       - "validate-prices.py"
       - ".github/workflows/publish-feed.yml"
@@ -74,6 +76,9 @@ jobs:
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node apply-audit-photo-removals.mjs
+
+      - name: Permanently exclude blocked offers
+        run: node apply-offer-exclusions.mjs
 
       - name: Guard saved Collar photo order
         run: python3 validate-collar-photo-choices.py
