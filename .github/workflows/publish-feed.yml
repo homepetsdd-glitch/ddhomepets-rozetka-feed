@@ -55,9 +55,6 @@ jobs:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node append-rozetka-photo-review.mjs
 
-      - name: Add fresh Pricecreator Collar review items
-        run: node append-fresh-collar-export-review.mjs
-
       - name: Build Collar photo suggestions
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
