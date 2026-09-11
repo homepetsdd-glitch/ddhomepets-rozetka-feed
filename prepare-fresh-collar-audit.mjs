@@ -41,5 +41,23 @@ if (!source.includes(reportOld)) {
 }
 source = source.replace(reportOld, reportNew);
 
+// The publish workflow saves the repository version of collar-photo-choices.json
+// before run-generate-with-restores rebuilds the runtime choices file. Include that
+// repository copy in the merge so manual choices made during the audit are actually
+// applied to feed.xml, not only displayed as suggestions in the gallery.
+const extraConstOld = 'const EXTRA_CHOICES_FILE = "collar-photo-choices-extra.json";';
+const extraConstNew = `${extraConstOld}\nconst REPO_CHOICES_FILE = "collar-photo-choices.repo.json";`;
+if (!source.includes(extraConstOld)) {
+  throw new Error("Fresh Collar audit prep: extra choices constant marker not found");
+}
+source = source.replace(extraConstOld, extraConstNew);
+
+const mergeOld = '  const mergedChoices = { ...latestChoices, ...extraChoices };';
+const mergeNew = `  const repoChoices = fs.existsSync(REPO_CHOICES_FILE)\n    ? JSON.parse(fs.readFileSync(REPO_CHOICES_FILE, "utf8"))\n    : {};\n  const mergedChoices = { ...latestChoices, ...repoChoices, ...extraChoices };`;
+if (!source.includes(mergeOld)) {
+  throw new Error("Fresh Collar audit prep: choices merge marker not found");
+}
+source = source.replace(mergeOld, mergeNew);
+
 fs.writeFileSync(WRAPPER_FILE, source, "utf8");
 console.log(`Fresh Collar audit prep: enabled ${ids.length} current Pricecreator Collar IDs for feed + gallery review`);
