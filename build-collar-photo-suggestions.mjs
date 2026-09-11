@@ -154,7 +154,7 @@ for (const item of report) {
       end_photo: directEnd >= 1 && directEnd <= count ? directEnd : null,
       mode: "saved_manual_choice",
       photo_fix_target: Boolean(item.photo_fix_target),
-      remove_first_photo: Boolean(item.photo_fix_target && directMain > 1),
+      remove_first_photo: Boolean(item.photo_fix_target),
       series,
       learned_main_examples: 1,
       learned_main_confidence: 100,
@@ -185,7 +185,7 @@ for (const item of report) {
     end_photo: end,
     mode,
     photo_fix_target: Boolean(item.photo_fix_target),
-    remove_first_photo: Boolean(item.photo_fix_target && main && main > 1),
+    remove_first_photo: Boolean(item.photo_fix_target),
     series,
     learned_main_examples: learned.main ? learned.main.examples : 0,
     learned_main_confidence: learned.main ? learned.main.confidence : 0,
@@ -289,12 +289,13 @@ const inject = `
           if (s.end_photo) text += ' <b>Фото №' + s.end_photo + ' → в кінець</b>.';
           text += '<br><small>Взято прямо з твого вже збереженого ручного вибору для цього товару.</small>';
         } else if (s.photo_fix_target) {
+          text += '<b>Фото №1 = різновиди — видалено.</b> ';
           if (s.main_photo) {
-            text += '<b>Фото №1 = різновиди — видалено. Фото №' + s.main_photo + ' → головне.</b>' +
+            text += '<b>Фото №' + s.main_photo + ' → головне.</b>' +
               '<br><small>Так робиться у ' + s.learned_main_examples +
               ' твоїх перевірених товарах цієї серії (' + s.learned_main_confidence + '% збігу).</small>';
           } else {
-            text += '<b>Фото №1 = різновиди, але поки не видаляю без вибраного нового головного.</b>' +
+            text += '<b>Нове головне ще не визначене.</b>' +
               '<br><small>Для вибору нового головного ще немає достатнього однакового правила — перевір очима.</small>';
           }
           if (s.end_photo) {
