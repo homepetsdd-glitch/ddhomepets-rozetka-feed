@@ -111,6 +111,17 @@ for (const m of sourceXml.matchAll(/<offer\b[\s\S]*?<\/offer>/gi)) {
   if (id && REMOVE_POSITIONS[id]) sourceById.set(id, xml);
 }
 
+// Some audited offers can disappear from the final Rozetka feed (for example because
+// the source marks them unavailable or another feed rule excludes them). Those must not
+// block publishing. Safety is enforced only for audited offers that are actually present
+// in this build's final feed.
+const activeTargetIds = new Set();
+for (const m of feedXml.matchAll(/<offer\b[\s\S]*?<\/offer>/gi)) {
+  const id = offerId(m[0]);
+  if (id && REMOVE_POSITIONS[id]) activeTargetIds.add(id);
+}
+const inactiveTargetIds = Object.keys(REMOVE_POSITIONS).filter(id => !activeTargetIds.has(id));
+
 const correctedIds = new Set();
 let removedPictures = 0;
 let missingSource = 0;
@@ -182,6 +193,8 @@ if (fs.existsSync(STATS_FILE)) {
   stats.audit_photo_positions_removed = removedPictures;
   stats.audit_photo_missing_source = missingSource;
   stats.audit_photo_missing_choice = missingChoice;
+  stats.audit_photo_targets_in_feed = activeTargetIds.size;
+  stats.audit_photo_targets_not_in_feed = inactiveTargetIds.length;
   fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2) + "\n", "utf8");
 }
 
@@ -199,14 +212,18 @@ if (fs.existsSync(GALLERY_FILE)) {
   }
 }
 
-if (correctedIds.size !== Object.keys(REMOVE_POSITIONS).length) {
+if (correctedIds.size !== activeTargetIds.size || missingSource || missingChoice) {
   throw new Error(
-    `Audit photo removals safety stop: corrected ${correctedIds.size}/${Object.keys(REMOVE_POSITIONS).length}; ` +
-    `missing source=${missingSource}; missing choice=${missingChoice}`
+    `Audit photo removals safety stop: corrected ${correctedIds.size}/${activeTargetIds.size} active feed targets; ` +
+    `missing source=${missingSource}; missing choice=${missingChoice}; not in feed=${inactiveTargetIds.length}`
   );
 }
 
 console.log(
-  `Audit photo removals: corrected=${correctedIds.size}; removed=${removedPictures}; ` +
-  `missing source=${missingSource}; missing choice=${missingChoice}`
+  `Audit photo removals: corrected=${correctedIds.size}/${activeTargetIds.size} active feed targets; ` +
+  `removed=${removedPictures}; missing source=${missingSource}; missing choice=${missingChoice}; ` +
+  `not in feed=${inactiveTargetIds.length}`
 );
+if (inactiveTargetIds.length) {
+  console.log(`Audit photo removals: skipped because not in final feed: ${inactiveTargetIds.join(',')}`);
+}
