@@ -28,24 +28,28 @@ function offerId(xml) {
 
 function seriesKey(name = "") {
   let s = String(name).toLowerCase().trim();
-
-  // Product titles usually put print/size/color variants after the first comma.
-  // Using the stable prefix groups the same model across prints and sizes, e.g.
-  // "Дощовик ... WAUDOG Clothes, малюнок ..." -> one WAUDOG Clothes series.
   const commaIndex = s.indexOf(",");
   if (commaIndex > 0) s = s.slice(0, commaIndex);
-
-  s = s
+  return s
     .replace(/[«»“”„"'`’]/g, " ")
     .replace(/[()\[\]{},.:;!?/\\|+_=–—-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-
-  return s;
 }
 
 function escJsJson(value) {
   return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
+function addOfferMeta(xmlText, meta) {
+  for (const m of String(xmlText || "").matchAll(/<offer\b[\s\S]*?<\/offer>/gi)) {
+    const xml = m[0];
+    const id = offerId(xml);
+    if (!id) continue;
+    const name = tag(xml, "name_ua") || tag(xml, "name");
+    if (!name) continue;
+    meta.set(String(id), { id: String(id), name, series: seriesKey(name) });
+  }
 }
 
 if (!fs.existsSync(REPORT_FILE) || !fs.existsSync(CHOICES_FILE) || !fs.existsSync(FEED_FILE) || !fs.existsSync(GALLERY_FILE)) {
@@ -56,24 +60,30 @@ const report = JSON.parse(fs.readFileSync(REPORT_FILE, "utf8"));
 const choices = JSON.parse(fs.readFileSync(CHOICES_FILE, "utf8"));
 const feed = fs.readFileSync(FEED_FILE, "utf8");
 
+// Important: manual choices are keyed by the original Prom/source OFFERID.
+// Many final Rozetka feed IDs are remapped, so learning only from _site/feed.xml
+// loses the names of most reviewed products. Read the original Prom XML too.
 const meta = new Map();
-for (const m of feed.matchAll(/<offer\b[\s\S]*?<\/offer>/gi)) {
-  const xml = m[0];
-  const id = offerId(xml);
-  if (!id) continue;
-  const name = tag(xml, "name_ua") || tag(xml, "name");
-  meta.set(id, { id, name, series: seriesKey(name) });
+const sourceUrl = String(process.env.PROM_SOURCE_URL || "").trim();
+if (sourceUrl) {
+  try {
+    const response = await fetch(sourceUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    addOfferMeta(await response.text(), meta);
+  } catch (err) {
+    console.warn(`Suggestion builder: could not read Prom source XML: ${err.message}`);
+  }
 }
+// Feed metadata is a fallback and also covers remapped target IDs.
+addOfferMeta(feed, meta);
 
-// Learn only the user's manual "to end" choices, grouped by product series.
-// We do not copy a single product blindly. A position is trusted only when there
-// are at least 3 reviewed examples in the same series and >=70% agree.
 const seriesStats = new Map();
+let resolvedManualChoices = 0;
 for (const [id, choice] of Object.entries(choices)) {
   const m = meta.get(String(id));
   if (!m || !m.series || !choice) continue;
-  const review = String(choice.review || "").toLowerCase();
-  if (review === "auto") continue;
+  resolvedManualChoices++;
+  if (String(choice.review || "").toLowerCase() === "auto") continue;
 
   const end = Number(choice.end_photo || 0);
   if (!end) continue;
@@ -192,7 +202,7 @@ const inject = `
         let text = '🤖 Автопідбір: <b>Фото №1 лишається головним</b>.';
         if (s.end_photo) {
           text += ' <b>Фото №' + s.end_photo + ' → в кінець</b>.' +
-            '<br><small>Це правило підтверджене ' + s.learned_examples +
+            '<br><small>Правило підтверджене ' + s.learned_examples +
             ' твоїми перевіреними товарами цієї серії (' + s.learned_confidence + '% збігу).</small>';
         } else {
           text += '<br><small>Для «в кінець» ще немає достатньо однакових перевірених прикладів — не вгадую.</small>';
@@ -221,4 +231,4 @@ if (bodyIndex < 0) throw new Error("Suggestion builder: </body> not found in gal
 html = html.slice(0, bodyIndex) + inject + html.slice(bodyIndex);
 fs.writeFileSync(GALLERY_FILE, html, "utf8");
 
-console.log(`Collar suggestions: ${Object.keys(suggestions).length}; learned end-photo series: ${learnedEndBySeries.size}`);
+console.log(`Collar suggestions: ${Object.keys(suggestions).length}; learned end-photo series: ${learnedEndBySeries.size}; manual choices resolved to source names: ${resolvedManualChoices}/${Object.keys(choices).length}`);
