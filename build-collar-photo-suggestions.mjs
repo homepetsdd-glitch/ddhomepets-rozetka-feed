@@ -142,7 +142,7 @@ for (const item of report) {
   const count = Number(item.pictures_count || 0);
   const sourceId = String(item.source_id || "");
   const targetId = String(item.rozetka_offer_id || "");
-  const direct = repoChoices[sourceId] || repoChoices[targetId] || null;
+  const direct = choices[sourceId] || choices[targetId] || null;
   const series = seriesKey(item.name || "");
   const learned = learnedBySeries.get(series) || { main: null, end: null };
   const firstAlreadyRemovedInGallery = Boolean(item.rozetka_review_target);
@@ -205,6 +205,7 @@ const inject = `
 <script>
 (() => {
   const suggestions = ${payload};
+  const fullAuditResetKey = 'collar_full_audit_2026_09_11_v1';
 
   function clearAutoVisuals(card) {
     card.querySelectorAll('.photo').forEach(photo => {
@@ -238,6 +239,21 @@ const inject = `
   }
 
   document.addEventListener('DOMContentLoaded', () => {
+    // One-time reset for this full re-audit. Old local browser marks came from the
+    // previous partial gallery and must not suppress freshly generated suggestions.
+    if (!localStorage.getItem(fullAuditResetKey)) {
+      Object.keys(localStorage).forEach(key => {
+        if (
+          key.startsWith('collar_review_') ||
+          key.startsWith('collar_main_photo_') ||
+          key.startsWith('collar_end_photo_')
+        ) {
+          localStorage.removeItem(key);
+        }
+      });
+      localStorage.setItem(fullAuditResetKey, '1');
+    }
+
     let applied = 0;
     let endApplied = 0;
     let photoFixApplied = 0;
@@ -248,6 +264,12 @@ const inject = `
       const s = suggestions[id];
       if (!s) return;
 
+      // Always preserve the visual removal of a known variants/assortment first photo,
+      // even when this card has already been manually reviewed after the reset.
+      if (s.remove_first_photo && hideRemovedFirstPhoto(card)) {
+        firstRemoved++;
+      }
+
       const savedReview = localStorage.getItem('collar_review_' + id);
       if (savedReview && savedReview !== 'auto') return;
 
@@ -256,6 +278,7 @@ const inject = `
         localStorage.removeItem('collar_end_photo_' + id);
         localStorage.removeItem('collar_review_' + id);
         clearAutoVisuals(card);
+        if (s.remove_first_photo) hideRemovedFirstPhoto(card);
       }
 
       localStorage.setItem('collar_review_' + id, 'auto');
@@ -273,10 +296,6 @@ const inject = `
         endApplied++;
       }
 
-      if (s.remove_first_photo && hideRemovedFirstPhoto(card)) {
-        firstRemoved++;
-      }
-
       const info = card.querySelector('.info');
       if (info) {
         const box = document.createElement('div');
@@ -290,7 +309,7 @@ const inject = `
           if (s.remove_first_photo || s.first_already_removed_in_gallery) text += '<b>Фото №1 (різновиди) видалено.</b> ';
           text += s.main_photo ? '<b>Фото №' + s.main_photo + ' головне</b>.' : '<b>головне не задане</b>.';
           if (s.end_photo) text += ' <b>Фото №' + s.end_photo + ' → в кінець</b>.';
-          text += '<br><small>Взято прямо з твого вже збереженого ручного вибору для цього товару.</small>';
+          text += '<br><small>Це твій попередній збережений вибір. У повному аудиті його треба ще раз перевірити, бо фото постачальника могли змінитися.</small>';
         } else if (s.photo_fix_target) {
           text += '<b>Фото №1 = різновиди — видалено.</b> ';
           if (s.main_photo) {
@@ -325,7 +344,7 @@ const inject = `
       const badge = document.createElement('span');
       badge.style.marginLeft = '10px';
       badge.style.fontWeight = 'bold';
-      badge.textContent = '🤖 Автопідбір: ' + applied + ' · PHOTO_FIX головне: ' + photoFixApplied + ' · видалено різновиди: ' + firstRemoved + ' · «в кінець»: ' + endApplied;
+      badge.textContent = '🔄 Повний аудит COLLAR · автопідбір: ' + applied + ' · PHOTO_FIX головне: ' + photoFixApplied + ' · видалено різновиди: ' + firstRemoved + ' · «в кінець»: ' + endApplied;
       filters.appendChild(badge);
     }
   });
