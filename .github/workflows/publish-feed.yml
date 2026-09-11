@@ -4,6 +4,8 @@ on:
     paths:
       - "fresh-collar-review.json.gz.b64"
       - "append-fresh-collar-export-review.mjs"
+      - "fresh-collar-review-ids.txt"
+      - "append-fresh-collar-live-review.mjs"
       - "rozetka-collar-audit-extra-offerids.txt"
       - "prepare-fresh-collar-audit.mjs"
       - "collar-photo-choices.json"
@@ -56,6 +58,11 @@ jobs:
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node append-rozetka-photo-review.mjs
+
+      - name: Add remaining 325 Collar review items
+        env:
+          PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
+        run: node append-fresh-collar-live-review.mjs
 
       - name: Build Collar photo suggestions
         env:
