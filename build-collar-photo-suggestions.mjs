@@ -96,9 +96,6 @@ if (sourceUrl) {
 }
 addOfferMeta(feed, meta);
 
-// Learn the user's repeated decisions by product series.
-// For PHOTO_FIX products the original first picture is the variants/assortment picture,
-// so we separately learn which ORIGINAL photo number the user normally makes main.
 const seriesStats = new Map();
 let resolvedManualChoices = 0;
 for (const [id, choice] of Object.entries(choices)) {
@@ -118,7 +115,6 @@ for (const [id, choice] of Object.entries(choices)) {
   const stat = seriesStats.get(m.series);
 
   const main = Number(choice.main_photo || 0);
-  // Only main choices >1 teach the PHOTO_FIX rule; main=1 is usually a normal product.
   if (main > 1) {
     stat.mainTotal++;
     stat.mainPositions.set(main, (stat.mainPositions.get(main) || 0) + 1);
@@ -158,6 +154,7 @@ for (const item of report) {
       end_photo: directEnd >= 1 && directEnd <= count ? directEnd : null,
       mode: "saved_manual_choice",
       photo_fix_target: Boolean(item.photo_fix_target),
+      remove_first_photo: Boolean(item.photo_fix_target && directMain > 1),
       series,
       learned_main_examples: 1,
       learned_main_confidence: 100,
@@ -172,7 +169,6 @@ for (const item of report) {
   let mode = "safe_default";
 
   if (item.photo_fix_target) {
-    // Never suggest the variants/assortment photo #1 as main for PHOTO_FIX.
     main = learned.main && learned.main.position > 1 && learned.main.position <= count
       ? learned.main.position
       : null;
@@ -189,6 +185,7 @@ for (const item of report) {
     end_photo: end,
     mode,
     photo_fix_target: Boolean(item.photo_fix_target),
+    remove_first_photo: Boolean(item.photo_fix_target && main && main > 1),
     series,
     learned_main_examples: learned.main ? learned.main.examples : 0,
     learned_main_confidence: learned.main ? learned.main.confidence : 0,
@@ -210,6 +207,8 @@ const inject = `
     card.querySelectorAll('.photo').forEach(photo => {
       photo.classList.remove('selected-main');
       photo.classList.remove('selected-end');
+      photo.classList.remove('auto-removed-first');
+      photo.style.display = '';
     });
     delete card.dataset.mainPhoto;
     delete card.dataset.endPhoto;
@@ -224,10 +223,22 @@ const inject = `
     card.dataset[kind === 'main' ? 'mainPhoto' : 'endPhoto'] = String(position);
   }
 
+  function hideRemovedFirstPhoto(card) {
+    const photos = card.querySelectorAll('.photo');
+    const first = photos[0];
+    if (!first) return false;
+    first.classList.remove('selected-main');
+    first.classList.remove('selected-end');
+    first.classList.add('auto-removed-first');
+    first.style.display = 'none';
+    return true;
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     let applied = 0;
     let endApplied = 0;
     let photoFixApplied = 0;
+    let firstRemoved = 0;
 
     document.querySelectorAll('.card').forEach(card => {
       const id = card.dataset.id;
@@ -259,6 +270,10 @@ const inject = `
         endApplied++;
       }
 
+      if (s.remove_first_photo && hideRemovedFirstPhoto(card)) {
+        firstRemoved++;
+      }
+
       const info = card.querySelector('.info');
       if (info) {
         const box = document.createElement('div');
@@ -269,16 +284,17 @@ const inject = `
 
         let text = '🤖 Автопідбір: ';
         if (s.mode === 'saved_manual_choice') {
+          if (s.remove_first_photo) text += '<b>Фото №1 (різновиди) видалено.</b> ';
           text += s.main_photo ? '<b>Фото №' + s.main_photo + ' головне</b>.' : '<b>головне не задане</b>.';
           if (s.end_photo) text += ' <b>Фото №' + s.end_photo + ' → в кінець</b>.';
           text += '<br><small>Взято прямо з твого вже збереженого ручного вибору для цього товару.</small>';
         } else if (s.photo_fix_target) {
           if (s.main_photo) {
-            text += '<b>Фото №1 = різновиди, його видаляємо. Фото №' + s.main_photo + ' → головне.</b>' +
+            text += '<b>Фото №1 = різновиди — видалено. Фото №' + s.main_photo + ' → головне.</b>' +
               '<br><small>Так робиться у ' + s.learned_main_examples +
               ' твоїх перевірених товарах цієї серії (' + s.learned_main_confidence + '% збігу).</small>';
           } else {
-            text += '<b>Фото №1 = різновиди, його не ставимо головним.</b>' +
+            text += '<b>Фото №1 = різновиди, але поки не видаляю без вибраного нового головного.</b>' +
               '<br><small>Для вибору нового головного ще немає достатнього однакового правила — перевір очима.</small>';
           }
           if (s.end_photo) {
@@ -305,7 +321,7 @@ const inject = `
       const badge = document.createElement('span');
       badge.style.marginLeft = '10px';
       badge.style.fontWeight = 'bold';
-      badge.textContent = '🤖 Автопідбір: ' + applied + ' · PHOTO_FIX головне: ' + photoFixApplied + ' · «в кінець»: ' + endApplied;
+      badge.textContent = '🤖 Автопідбір: ' + applied + ' · PHOTO_FIX головне: ' + photoFixApplied + ' · видалено різновиди: ' + firstRemoved + ' · «в кінець»: ' + endApplied;
       filters.appendChild(badge);
     }
   });
