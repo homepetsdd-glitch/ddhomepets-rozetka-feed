@@ -2,6 +2,7 @@ import fs from "node:fs";
 
 const REPORT_FILE = "_site/collar-photo-report.json";
 const CHOICES_FILE = "collar-photo-choices.json";
+const REPO_CHOICES_FILE = "collar-photo-choices.repo.json";
 const FEED_FILE = "_site/feed.xml";
 const GALLERY_FILE = "_site/collar-photo-gallery.html";
 const OUT_FILE = "_site/collar-photo-suggestions.json";
@@ -57,12 +58,13 @@ if (!fs.existsSync(REPORT_FILE) || !fs.existsSync(CHOICES_FILE) || !fs.existsSyn
 }
 
 const report = JSON.parse(fs.readFileSync(REPORT_FILE, "utf8"));
-const choices = JSON.parse(fs.readFileSync(CHOICES_FILE, "utf8"));
+const runtimeChoices = JSON.parse(fs.readFileSync(CHOICES_FILE, "utf8"));
+const repoChoices = fs.existsSync(REPO_CHOICES_FILE)
+  ? JSON.parse(fs.readFileSync(REPO_CHOICES_FILE, "utf8"))
+  : {};
+const choices = { ...runtimeChoices, ...repoChoices };
 const feed = fs.readFileSync(FEED_FILE, "utf8");
 
-// Important: manual choices are keyed by the original Prom/source OFFERID.
-// Many final Rozetka feed IDs are remapped, so learning only from _site/feed.xml
-// loses the names of most reviewed products. Read the original Prom XML too.
 const meta = new Map();
 const sourceUrl = String(process.env.PROM_SOURCE_URL || "").trim();
 if (sourceUrl) {
@@ -74,7 +76,6 @@ if (sourceUrl) {
     console.warn(`Suggestion builder: could not read Prom source XML: ${err.message}`);
   }
 }
-// Feed metadata is a fallback and also covers remapped target IDs.
 addOfferMeta(feed, meta);
 
 const seriesStats = new Map();
@@ -115,17 +116,37 @@ for (const [series, stat] of seriesStats.entries()) {
 }
 
 const suggestions = {};
+let directChoiceCount = 0;
 for (const item of report) {
   if (item.photo_fix_target) continue;
 
   const count = Number(item.pictures_count || 0);
+  const sourceId = String(item.source_id || "");
+  const targetId = String(item.rozetka_offer_id || "");
+  const direct = repoChoices[sourceId] || repoChoices[targetId] || null;
+
+  if (direct) {
+    const directMain = Number(direct.main_photo || 1);
+    const directEnd = Number(direct.end_photo || 0);
+    suggestions[targetId] = {
+      main_photo: directMain >= 1 && directMain <= count ? directMain : 1,
+      end_photo: directEnd >= 1 && directEnd <= count ? directEnd : null,
+      mode: "saved_manual_choice",
+      series: seriesKey(item.name || ""),
+      learned_examples: 1,
+      learned_confidence: 100
+    };
+    directChoiceCount++;
+    continue;
+  }
+
   const series = seriesKey(item.name || "");
   const learned = learnedEndBySeries.get(series) || null;
   const end = learned && learned.position > 1 && learned.position <= count
     ? learned.position
     : null;
 
-  suggestions[String(item.rozetka_offer_id)] = {
+  suggestions[targetId] = {
     main_photo: 1,
     end_photo: end,
     mode: end ? "series_consensus" : "safe_default",
@@ -181,10 +202,10 @@ const inject = `
         clearAutoVisuals(card);
       }
 
-      localStorage.setItem('collar_main_photo_' + id, '1');
+      localStorage.setItem('collar_main_photo_' + id, String(s.main_photo || 1));
       localStorage.setItem('collar_review_' + id, 'auto');
       card.dataset.review = 'auto';
-      applyVisual(card, 'main', 1);
+      applyVisual(card, 'main', s.main_photo || 1);
 
       if (s.end_photo) {
         localStorage.setItem('collar_end_photo_' + id, String(s.end_photo));
@@ -199,11 +220,15 @@ const inject = `
         box.style.padding = '7px 9px';
         box.style.background = '#eaf7ea';
         box.style.border = '1px solid #76a876';
-        let text = '🤖 Автопідбір: <b>Фото №1 лишається головним</b>.';
+        let text = '🤖 Автопідбір: <b>Фото №' + (s.main_photo || 1) + ' головне</b>.';
         if (s.end_photo) {
-          text += ' <b>Фото №' + s.end_photo + ' → в кінець</b>.' +
-            '<br><small>Правило підтверджене ' + s.learned_examples +
-            ' твоїми перевіреними товарами цієї серії (' + s.learned_confidence + '% збігу).</small>';
+          text += ' <b>Фото №' + s.end_photo + ' → в кінець</b>.';
+          if (s.mode === 'saved_manual_choice') {
+            text += '<br><small>Взято прямо з твого вже збереженого ручного вибору для цього товару.</small>';
+          } else {
+            text += '<br><small>Правило підтверджене ' + s.learned_examples +
+              ' твоїми перевіреними товарами цієї серії (' + s.learned_confidence + '% збігу).</small>';
+          }
         } else {
           text += '<br><small>Для «в кінець» ще немає достатньо однакових перевірених прикладів — не вгадую.</small>';
         }
@@ -231,4 +256,4 @@ if (bodyIndex < 0) throw new Error("Suggestion builder: </body> not found in gal
 html = html.slice(0, bodyIndex) + inject + html.slice(bodyIndex);
 fs.writeFileSync(GALLERY_FILE, html, "utf8");
 
-console.log(`Collar suggestions: ${Object.keys(suggestions).length}; learned end-photo series: ${learnedEndBySeries.size}; manual choices resolved to source names: ${resolvedManualChoices}/${Object.keys(choices).length}`);
+console.log(`Collar suggestions: ${Object.keys(suggestions).length}; learned end-photo series: ${learnedEndBySeries.size}; manual choices resolved: ${resolvedManualChoices}/${Object.keys(choices).length}; direct saved choices used in report: ${directChoiceCount}`);
