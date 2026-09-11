@@ -6,6 +6,16 @@ const RESTORE_IDS_FILE = "restore-offerids.txt";
 const SOURCE_FILE = "generate-feed.mjs";
 const TEMP_FILE = ".generate-feed-with-restores.tmp.mjs";
 const LATEST_CHOICES_B64_FILE = "collar-photo-choices.latest.json.gz.b64";
+const ROZETKA_VARIANTS_FIRST_REMOVE_IDS = new Set([
+  "3165828775",
+  "3165828759",
+  "3165828758",
+  "3163433466",
+  "3165828756",
+  "3162334739",
+  "3163415738",
+  "3165828773",
+]);
 
 // Rebuild the latest reviewed Collar photo choices before generating the feed.
 // The compact gzip+base64 payload keeps the repository file small while preserving
@@ -44,7 +54,7 @@ if ((source.match(/const isWhitelisted = whitelist\.has\(targetId\);/g) || []).l
 const restoreLiteral = JSON.stringify(restoreIds);
 source = source.replace(
   thresholdMarker,
-  `${thresholdMarker}\n\n// Verified restore list: active in Pricecreator and present in fresh Prom export.\nconst RESTORE_OFFER_IDS = new Set(${restoreLiteral});`
+  `${thresholdMarker}\n\n// Verified restore list: active in Pricecreator and present in fresh Prom export.\nconst RESTORE_OFFER_IDS = new Set(${restoreLiteral});\n\n// Rozetka confirmation: these 8 COLLAR-family products have an assortment/variants image first.\nconst ROZETKA_VARIANTS_FIRST_REMOVE_IDS = new Set(${JSON.stringify([...ROZETKA_VARIANTS_FIRST_REMOVE_IDS])});`
 );
 source = source.replace(
   whitelistMarker,
@@ -95,10 +105,21 @@ if ((reportSource.match(/photo_fix_target: true,/g) || []).length !== 1) {
 }
 reportSource = reportSource.replace(
   photoFixTargetMarker,
-  "      photo_fix_target: photoFixSet.has(String(targetId)),"
+  "      photo_fix_target: photoFixSet.has(String(targetId)) || ROZETKA_VARIANTS_FIRST_REMOVE_IDS.has(String(targetId)),"
 );
 
 source = source.slice(0, reportStart) + reportSource + source.slice(reportEnd);
+
+// Treat the 8 Rozetka-confirmed assortment/variants-first products as first-photo fixes
+// in the main feed, so photo #1 is removed even before a manual gallery choice exists.
+const isPhotoFixTargetMarker = "const isPhotoFixTarget = photoFixSet.has(targetId);";
+if ((source.match(/const isPhotoFixTarget = photoFixSet\.has\(targetId\);/g) || []).length !== 1) {
+  throw new Error("Safety stop: expected exactly one main isPhotoFixTarget marker");
+}
+source = source.replace(
+  isPhotoFixTargetMarker,
+  "const isPhotoFixTarget = photoFixSet.has(targetId) || ROZETKA_VARIANTS_FIRST_REMOVE_IDS.has(String(targetId));"
+);
 
 // For items explicitly marked review="problem", remove the original first photo
 // whenever a different main photo was selected. This prevents assortment/variant
