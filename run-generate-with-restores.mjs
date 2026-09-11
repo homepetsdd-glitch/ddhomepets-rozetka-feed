@@ -17,6 +17,12 @@ const ROZETKA_VARIANTS_FIRST_REMOVE_IDS = new Set([
   "3162334739",
   "3163415738",
   "3165828773",
+  // COLLAR Company litter / SuperCat / No1: first photo is an assortment/variants collage.
+  "3140239782",
+  "3140239795",
+  "3140239794",
+  "3175112961",
+  "3176494893",
 ]);
 
 // Rebuild the latest reviewed Collar photo choices before generating the feed.
@@ -77,7 +83,7 @@ if ((source.match(/const isWhitelisted = whitelist\.has\(targetId\);/g) || []).l
 const restoreLiteral = JSON.stringify(restoreIds);
 source = source.replace(
   thresholdMarker,
-  `${thresholdMarker}\n\n// Verified restore list: active in Pricecreator and present in fresh Prom export.\nconst RESTORE_OFFER_IDS = new Set(${restoreLiteral});\n\n// Current multi-photo COLLAR-family items identified by the fresh Rozetka export but not identifiable from Prom name/vendor alone.\nconst ROZETKA_COLLAR_AUDIT_EXTRA_IDS = new Set(${JSON.stringify(rozetkaCollarAuditExtraIds)});\n\n// Rozetka confirmation: these 8 COLLAR-family products have an assortment/variants image first.\nconst ROZETKA_VARIANTS_FIRST_REMOVE_IDS = new Set(${JSON.stringify([...ROZETKA_VARIANTS_FIRST_REMOVE_IDS])});`
+  `${thresholdMarker}\n\n// Verified restore list: active in Pricecreator and present in fresh Prom export.\nconst RESTORE_OFFER_IDS = new Set(${restoreLiteral});\n\n// Current multi-photo COLLAR-family items identified by the fresh Rozetka export but not identifiable from Prom name/vendor alone.\nconst ROZETKA_COLLAR_AUDIT_EXTRA_IDS = new Set(${JSON.stringify(rozetkaCollarAuditExtraIds)});\n\n// Rozetka-confirmed COLLAR-family products whose original first image is an assortment/variants collage.\nconst ROZETKA_VARIANTS_FIRST_REMOVE_IDS = new Set(${JSON.stringify([...ROZETKA_VARIANTS_FIRST_REMOVE_IDS])});`
 );
 source = source.replace(
   whitelistMarker,
@@ -156,7 +162,7 @@ if ((reportSource.match(/if \(!isCollarFamily\) continue;/g) || []).length !== 1
 }
 reportSource = reportSource.replace(
   familyContinueMarker,
-  "if (!isCollarFamily && !ROZETKA_COLLAR_AUDIT_EXTRA_IDS.has(String(targetId))) continue;"
+  "if (!isCollarFamily && !ROZETKA_COLLAR_AUDIT_EXTRA_IDS.has(String(targetId)) && !ROZETKA_VARIANTS_FIRST_REMOVE_IDS.has(String(targetId))) continue;"
 );
 
 const photoFixTargetMarker = "      photo_fix_target: true,";
@@ -179,7 +185,7 @@ reportSource = reportSource.replace(
 
 source = source.slice(0, reportStart) + reportSource + source.slice(reportEnd);
 
-// Treat the 8 Rozetka-confirmed assortment/variants-first products as first-photo fixes
+// Treat Rozetka-confirmed assortment/variants-first products as first-photo fixes
 // in the main feed, so photo #1 is removed even before a manual gallery choice exists.
 const isPhotoFixTargetMarker = "const isPhotoFixTarget = photoFixSet.has(targetId);";
 if ((source.match(/const isPhotoFixTarget = photoFixSet\.has\(targetId\);/g) || []).length !== 1) {
