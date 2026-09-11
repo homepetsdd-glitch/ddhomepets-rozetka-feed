@@ -29,6 +29,9 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Preserve repository photo choices for learner
+        run: cp collar-photo-choices.json collar-photo-choices.repo.json
+
       - name: Generate filtered Rozetka XML
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
