@@ -6,6 +6,7 @@ const RESTORE_IDS_FILE = "restore-offerids.txt";
 const SOURCE_FILE = "generate-feed.mjs";
 const TEMP_FILE = ".generate-feed-with-restores.tmp.mjs";
 const LATEST_CHOICES_B64_FILE = "collar-photo-choices.latest.json.gz.b64";
+const EXTRA_CHOICES_FILE = "collar-photo-choices-extra.json";
 const ROZETKA_VARIANTS_FIRST_REMOVE_IDS = new Set([
   "3165828775",
   "3165828759",
@@ -23,8 +24,16 @@ const ROZETKA_VARIANTS_FIRST_REMOVE_IDS = new Set([
 if (fs.existsSync(LATEST_CHOICES_B64_FILE)) {
   const encoded = fs.readFileSync(LATEST_CHOICES_B64_FILE, "utf8").trim();
   const choicesText = gunzipSync(Buffer.from(encoded, "base64")).toString("utf8");
-  JSON.parse(choicesText);
-  fs.writeFileSync("collar-photo-choices.json", choicesText, "utf8");
+  const latestChoices = JSON.parse(choicesText);
+  const extraChoices = fs.existsSync(EXTRA_CHOICES_FILE)
+    ? JSON.parse(fs.readFileSync(EXTRA_CHOICES_FILE, "utf8"))
+    : {};
+  const mergedChoices = { ...latestChoices, ...extraChoices };
+  fs.writeFileSync(
+    "collar-photo-choices.json",
+    JSON.stringify(mergedChoices, null, 2) + "\n",
+    "utf8"
+  );
 }
 
 const restoreText = fs.readFileSync(RESTORE_IDS_FILE, "utf8");
