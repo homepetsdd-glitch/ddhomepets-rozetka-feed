@@ -16,6 +16,7 @@ on:
       - "apply-offer-exclusions.mjs"
       - "validate-collar-photo-choices.py"
       - "validate-prices.py"
+      - "validate-photo-duplicates.py"
       - ".github/workflows/publish-feed.yml"
   schedule:
     - cron: "7 * * * *"
@@ -87,6 +88,9 @@ jobs:
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: python3 validate-prices.py
+
+      - name: Guard duplicate photo URLs
+        run: python3 validate-photo-duplicates.py
 
       - name: Validate generated XML
         run: |
