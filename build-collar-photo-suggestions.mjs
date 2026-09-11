@@ -53,6 +53,24 @@ function addOfferMeta(xmlText, meta) {
   }
 }
 
+function bestConsensus(positionMap, total, minExamples = 3, minConfidence = 0.70) {
+  let bestPos = null;
+  let bestCount = 0;
+  for (const [pos, count] of positionMap.entries()) {
+    if (count > bestCount) {
+      bestPos = pos;
+      bestCount = count;
+    }
+  }
+  const confidence = total ? bestCount / total : 0;
+  if (total < minExamples || confidence < minConfidence) return null;
+  return {
+    position: bestPos,
+    examples: total,
+    confidence: Math.round(confidence * 100)
+  };
+}
+
 if (!fs.existsSync(REPORT_FILE) || !fs.existsSync(CHOICES_FILE) || !fs.existsSync(FEED_FILE) || !fs.existsSync(GALLERY_FILE)) {
   throw new Error("Suggestion builder: required generated files are missing");
 }
@@ -78,6 +96,9 @@ if (sourceUrl) {
 }
 addOfferMeta(feed, meta);
 
+// Learn the user's repeated decisions by product series.
+// For PHOTO_FIX products the original first picture is the variants/assortment picture,
+// so we separately learn which ORIGINAL photo number the user normally makes main.
 const seriesStats = new Map();
 let resolvedManualChoices = 0;
 for (const [id, choice] of Object.entries(choices)) {
@@ -86,73 +107,93 @@ for (const [id, choice] of Object.entries(choices)) {
   resolvedManualChoices++;
   if (String(choice.review || "").toLowerCase() === "auto") continue;
 
-  const end = Number(choice.end_photo || 0);
-  if (!end) continue;
-
-  if (!seriesStats.has(m.series)) seriesStats.set(m.series, { total: 0, positions: new Map() });
-  const stat = seriesStats.get(m.series);
-  stat.total++;
-  stat.positions.set(end, (stat.positions.get(end) || 0) + 1);
-}
-
-const learnedEndBySeries = new Map();
-for (const [series, stat] of seriesStats.entries()) {
-  let bestPos = null;
-  let bestCount = 0;
-  for (const [pos, count] of stat.positions.entries()) {
-    if (count > bestCount) {
-      bestPos = pos;
-      bestCount = count;
-    }
-  }
-  const confidence = stat.total ? bestCount / stat.total : 0;
-  if (stat.total >= 3 && confidence >= 0.70) {
-    learnedEndBySeries.set(series, {
-      position: bestPos,
-      examples: stat.total,
-      confidence: Math.round(confidence * 100)
+  if (!seriesStats.has(m.series)) {
+    seriesStats.set(m.series, {
+      mainTotal: 0,
+      mainPositions: new Map(),
+      endTotal: 0,
+      endPositions: new Map()
     });
   }
+  const stat = seriesStats.get(m.series);
+
+  const main = Number(choice.main_photo || 0);
+  // Only main choices >1 teach the PHOTO_FIX rule; main=1 is usually a normal product.
+  if (main > 1) {
+    stat.mainTotal++;
+    stat.mainPositions.set(main, (stat.mainPositions.get(main) || 0) + 1);
+  }
+
+  const end = Number(choice.end_photo || 0);
+  if (end > 0) {
+    stat.endTotal++;
+    stat.endPositions.set(end, (stat.endPositions.get(end) || 0) + 1);
+  }
+}
+
+const learnedBySeries = new Map();
+for (const [series, stat] of seriesStats.entries()) {
+  learnedBySeries.set(series, {
+    main: bestConsensus(stat.mainPositions, stat.mainTotal),
+    end: bestConsensus(stat.endPositions, stat.endTotal)
+  });
 }
 
 const suggestions = {};
 let directChoiceCount = 0;
+let photoFixMainLearnedCount = 0;
 for (const item of report) {
-  if (item.photo_fix_target) continue;
-
   const count = Number(item.pictures_count || 0);
   const sourceId = String(item.source_id || "");
   const targetId = String(item.rozetka_offer_id || "");
   const direct = repoChoices[sourceId] || repoChoices[targetId] || null;
+  const series = seriesKey(item.name || "");
+  const learned = learnedBySeries.get(series) || { main: null, end: null };
 
   if (direct) {
-    const directMain = Number(direct.main_photo || 1);
+    const directMain = Number(direct.main_photo || 0);
     const directEnd = Number(direct.end_photo || 0);
     suggestions[targetId] = {
-      main_photo: directMain >= 1 && directMain <= count ? directMain : 1,
+      main_photo: directMain >= 1 && directMain <= count ? directMain : null,
       end_photo: directEnd >= 1 && directEnd <= count ? directEnd : null,
       mode: "saved_manual_choice",
-      series: seriesKey(item.name || ""),
-      learned_examples: 1,
-      learned_confidence: 100
+      photo_fix_target: Boolean(item.photo_fix_target),
+      series,
+      learned_main_examples: 1,
+      learned_main_confidence: 100,
+      learned_end_examples: 1,
+      learned_end_confidence: 100
     };
     directChoiceCount++;
     continue;
   }
 
-  const series = seriesKey(item.name || "");
-  const learned = learnedEndBySeries.get(series) || null;
-  const end = learned && learned.position > 1 && learned.position <= count
-    ? learned.position
+  let main = 1;
+  let mode = "safe_default";
+
+  if (item.photo_fix_target) {
+    // Never suggest the variants/assortment photo #1 as main for PHOTO_FIX.
+    main = learned.main && learned.main.position > 1 && learned.main.position <= count
+      ? learned.main.position
+      : null;
+    mode = main ? "photo_fix_series_consensus" : "photo_fix_needs_review";
+    if (main) photoFixMainLearnedCount++;
+  }
+
+  const end = learned.end && learned.end.position >= 1 && learned.end.position <= count
+    ? learned.end.position
     : null;
 
   suggestions[targetId] = {
-    main_photo: 1,
+    main_photo: main,
     end_photo: end,
-    mode: end ? "series_consensus" : "safe_default",
+    mode,
+    photo_fix_target: Boolean(item.photo_fix_target),
     series,
-    learned_examples: learned ? learned.examples : 0,
-    learned_confidence: learned ? learned.confidence : 0
+    learned_main_examples: learned.main ? learned.main.examples : 0,
+    learned_main_confidence: learned.main ? learned.main.confidence : 0,
+    learned_end_examples: learned.end ? learned.end.examples : 0,
+    learned_end_confidence: learned.end ? learned.end.confidence : 0
   };
 }
 
@@ -186,6 +227,7 @@ const inject = `
   document.addEventListener('DOMContentLoaded', () => {
     let applied = 0;
     let endApplied = 0;
+    let photoFixApplied = 0;
 
     document.querySelectorAll('.card').forEach(card => {
       const id = card.dataset.id;
@@ -202,10 +244,14 @@ const inject = `
         clearAutoVisuals(card);
       }
 
-      localStorage.setItem('collar_main_photo_' + id, String(s.main_photo || 1));
       localStorage.setItem('collar_review_' + id, 'auto');
       card.dataset.review = 'auto';
-      applyVisual(card, 'main', s.main_photo || 1);
+
+      if (s.main_photo) {
+        localStorage.setItem('collar_main_photo_' + id, String(s.main_photo));
+        applyVisual(card, 'main', s.main_photo);
+        if (s.photo_fix_target) photoFixApplied++;
+      }
 
       if (s.end_photo) {
         localStorage.setItem('collar_end_photo_' + id, String(s.end_photo));
@@ -218,20 +264,36 @@ const inject = `
         const box = document.createElement('div');
         box.style.marginTop = '8px';
         box.style.padding = '7px 9px';
-        box.style.background = '#eaf7ea';
-        box.style.border = '1px solid #76a876';
-        let text = '🤖 Автопідбір: <b>Фото №' + (s.main_photo || 1) + ' головне</b>.';
-        if (s.end_photo) {
-          text += ' <b>Фото №' + s.end_photo + ' → в кінець</b>.';
-          if (s.mode === 'saved_manual_choice') {
-            text += '<br><small>Взято прямо з твого вже збереженого ручного вибору для цього товару.</small>';
+        box.style.background = s.photo_fix_target ? '#fff6d8' : '#eaf7ea';
+        box.style.border = '1px solid ' + (s.photo_fix_target ? '#d7a928' : '#76a876');
+
+        let text = '🤖 Автопідбір: ';
+        if (s.mode === 'saved_manual_choice') {
+          text += s.main_photo ? '<b>Фото №' + s.main_photo + ' головне</b>.' : '<b>головне не задане</b>.';
+          if (s.end_photo) text += ' <b>Фото №' + s.end_photo + ' → в кінець</b>.';
+          text += '<br><small>Взято прямо з твого вже збереженого ручного вибору для цього товару.</small>';
+        } else if (s.photo_fix_target) {
+          if (s.main_photo) {
+            text += '<b>Фото №1 = різновиди, його видаляємо. Фото №' + s.main_photo + ' → головне.</b>' +
+              '<br><small>Так робиться у ' + s.learned_main_examples +
+              ' твоїх перевірених товарах цієї серії (' + s.learned_main_confidence + '% збігу).</small>';
           } else {
-            text += '<br><small>Правило підтверджене ' + s.learned_examples +
-              ' твоїми перевіреними товарами цієї серії (' + s.learned_confidence + '% збігу).</small>';
+            text += '<b>Фото №1 = різновиди, його не ставимо головним.</b>' +
+              '<br><small>Для вибору нового головного ще немає достатнього однакового правила — перевір очима.</small>';
+          }
+          if (s.end_photo) {
+            text += '<br><b>Фото №' + s.end_photo + ' → в кінець</b> (' +
+              s.learned_end_examples + ' прикладів, ' + s.learned_end_confidence + '% збігу).';
           }
         } else {
-          text += '<br><small>Для «в кінець» ще немає достатньо однакових перевірених прикладів — не вгадую.</small>';
+          text += '<b>Фото №1 головне</b>.';
+          if (s.end_photo) {
+            text += ' <b>Фото №' + s.end_photo + ' → в кінець</b>.' +
+              '<br><small>Правило підтверджене ' + s.learned_end_examples +
+              ' твоїми перевіреними товарами цієї серії (' + s.learned_end_confidence + '% збігу).</small>';
+          }
         }
+
         box.innerHTML = text;
         info.appendChild(box);
       }
@@ -243,7 +305,7 @@ const inject = `
       const badge = document.createElement('span');
       badge.style.marginLeft = '10px';
       badge.style.fontWeight = 'bold';
-      badge.textContent = '🤖 Автопідбір: ' + applied + ' · «в кінець»: ' + endApplied;
+      badge.textContent = '🤖 Автопідбір: ' + applied + ' · PHOTO_FIX головне: ' + photoFixApplied + ' · «в кінець»: ' + endApplied;
       filters.appendChild(badge);
     }
   });
@@ -256,4 +318,4 @@ if (bodyIndex < 0) throw new Error("Suggestion builder: </body> not found in gal
 html = html.slice(0, bodyIndex) + inject + html.slice(bodyIndex);
 fs.writeFileSync(GALLERY_FILE, html, "utf8");
 
-console.log(`Collar suggestions: ${Object.keys(suggestions).length}; learned end-photo series: ${learnedEndBySeries.size}; manual choices resolved: ${resolvedManualChoices}/${Object.keys(choices).length}; direct saved choices used in report: ${directChoiceCount}`);
+console.log(`Collar suggestions: ${Object.keys(suggestions).length}; manual choices resolved: ${resolvedManualChoices}/${Object.keys(choices).length}; direct saved choices: ${directChoiceCount}; PHOTO_FIX learned mains: ${photoFixMainLearnedCount}`);
