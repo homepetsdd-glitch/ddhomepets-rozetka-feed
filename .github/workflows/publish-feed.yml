@@ -4,6 +4,11 @@ on:
     paths:
       - "fresh-collar-review.json.gz.b64"
       - "append-fresh-collar-export-review.mjs"
+      - "rozetka-collar-audit-extra-offerids.txt"
+      - "prepare-fresh-collar-audit.mjs"
+      - "collar-photo-choices.json"
+      - "collar-photo-choices-extra.json"
+      - "collar-photo-choices.latest.json.gz.b64"
       - ".github/workflows/publish-feed.yml"
   schedule:
     - cron: "7 * * * *"
@@ -36,6 +41,9 @@ jobs:
 
       - name: Preserve repository photo choices for learner
         run: cp collar-photo-choices.json collar-photo-choices.repo.json
+
+      - name: Prepare full Collar audit and saved choices
+        run: node prepare-fresh-collar-audit.mjs
 
       - name: Generate filtered Rozetka XML
         env:
