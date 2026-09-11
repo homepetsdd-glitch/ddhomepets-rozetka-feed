@@ -35,6 +35,8 @@ jobs:
         run: node run-generate-with-restores.mjs
 
       - name: Build Collar photo suggestions
+        env:
+          PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node build-collar-photo-suggestions.mjs
 
       - name: Validate generated XML
