@@ -2,8 +2,8 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "rozetka-collar-audit-extra-offerids.txt"
-      - "prepare-fresh-collar-audit.mjs"
+      - "fresh-collar-review.json.gz.b64"
+      - "append-fresh-collar-export-review.mjs"
       - ".github/workflows/publish-feed.yml"
   schedule:
     - cron: "7 * * * *"
@@ -37,9 +37,6 @@ jobs:
       - name: Preserve repository photo choices for learner
         run: cp collar-photo-choices.json collar-photo-choices.repo.json
 
-      - name: Include fresh Pricecreator Collar items
-        run: node prepare-fresh-collar-audit.mjs
-
       - name: Generate filtered Rozetka XML
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
@@ -49,6 +46,9 @@ jobs:
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node append-rozetka-photo-review.mjs
+
+      - name: Add fresh Pricecreator Collar review items
+        run: node append-fresh-collar-export-review.mjs
 
       - name: Build Collar photo suggestions
         env:
