@@ -7,6 +7,7 @@ const SOURCE_FILE = "generate-feed.mjs";
 const TEMP_FILE = ".generate-feed-with-restores.tmp.mjs";
 const LATEST_CHOICES_B64_FILE = "collar-photo-choices.latest.json.gz.b64";
 const EXTRA_CHOICES_FILE = "collar-photo-choices-extra.json";
+const ROZETKA_COLLAR_AUDIT_EXTRA_IDS_FILE = "rozetka-collar-audit-extra-offerids.txt";
 const ROZETKA_VARIANTS_FIRST_REMOVE_IDS = new Set([
   "3165828775",
   "3165828759",
@@ -48,6 +49,19 @@ if (restoreIds.length !== 26) {
   throw new Error(`Safety stop: expected 26 restore OFFERIDs, found ${restoreIds.length}`);
 }
 
+const rozetkaCollarAuditExtraIds = fs.existsSync(ROZETKA_COLLAR_AUDIT_EXTRA_IDS_FILE)
+  ? [...new Set(
+      fs.readFileSync(ROZETKA_COLLAR_AUDIT_EXTRA_IDS_FILE, "utf8")
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(line => /^\d{10}$/.test(line))
+    )]
+  : [];
+
+if (rozetkaCollarAuditExtraIds.length !== 43) {
+  throw new Error(`Safety stop: expected 43 fresh Rozetka Collar audit extras, found ${rozetkaCollarAuditExtraIds.length}`);
+}
+
 let source = fs.readFileSync(SOURCE_FILE, "utf8");
 
 const thresholdMarker = "const AUTO_NEW_AFTER_PROM_ID = 3166628631;";
@@ -63,7 +77,7 @@ if ((source.match(/const isWhitelisted = whitelist\.has\(targetId\);/g) || []).l
 const restoreLiteral = JSON.stringify(restoreIds);
 source = source.replace(
   thresholdMarker,
-  `${thresholdMarker}\n\n// Verified restore list: active in Pricecreator and present in fresh Prom export.\nconst RESTORE_OFFER_IDS = new Set(${restoreLiteral});\n\n// Rozetka confirmation: these 8 COLLAR-family products have an assortment/variants image first.\nconst ROZETKA_VARIANTS_FIRST_REMOVE_IDS = new Set(${JSON.stringify([...ROZETKA_VARIANTS_FIRST_REMOVE_IDS])});`
+  `${thresholdMarker}\n\n// Verified restore list: active in Pricecreator and present in fresh Prom export.\nconst RESTORE_OFFER_IDS = new Set(${restoreLiteral});\n\n// Current multi-photo COLLAR-family items identified by the fresh Rozetka export but not identifiable from Prom name/vendor alone.\nconst ROZETKA_COLLAR_AUDIT_EXTRA_IDS = new Set(${JSON.stringify(rozetkaCollarAuditExtraIds)});\n\n// Rozetka confirmation: these 8 COLLAR-family products have an assortment/variants image first.\nconst ROZETKA_VARIANTS_FIRST_REMOVE_IDS = new Set(${JSON.stringify([...ROZETKA_VARIANTS_FIRST_REMOVE_IDS])});`
 );
 source = source.replace(
   whitelistMarker,
@@ -134,6 +148,15 @@ if (!reportSource.includes(familyMarker)) {
 reportSource = reportSource.replace(
   familyMarker,
   `const isCollarFamily =\n  vendor === "collar" ||\n  vendor === "collar company" ||\n  collarFamilyWords.some(word => vendor.includes(word) || name.includes(word));`
+);
+
+const familyContinueMarker = "if (!isCollarFamily) continue;";
+if ((reportSource.match(/if \(!isCollarFamily\) continue;/g) || []).length !== 1) {
+  throw new Error("Safety stop: COLLAR report family continue marker not found");
+}
+reportSource = reportSource.replace(
+  familyContinueMarker,
+  "if (!isCollarFamily && !ROZETKA_COLLAR_AUDIT_EXTRA_IDS.has(String(targetId))) continue;"
 );
 
 const photoFixTargetMarker = "      photo_fix_target: true,";
