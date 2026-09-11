@@ -145,6 +145,7 @@ for (const item of report) {
   const direct = repoChoices[sourceId] || repoChoices[targetId] || null;
   const series = seriesKey(item.name || "");
   const learned = learnedBySeries.get(series) || { main: null, end: null };
+  const firstAlreadyRemovedInGallery = Boolean(item.rozetka_review_target);
 
   if (direct) {
     const directMain = Number(direct.main_photo || 0);
@@ -154,7 +155,8 @@ for (const item of report) {
       end_photo: directEnd >= 1 && directEnd <= count ? directEnd : null,
       mode: "saved_manual_choice",
       photo_fix_target: Boolean(item.photo_fix_target),
-      remove_first_photo: Boolean(item.photo_fix_target),
+      remove_first_photo: Boolean(item.photo_fix_target) && !firstAlreadyRemovedInGallery,
+      first_already_removed_in_gallery: firstAlreadyRemovedInGallery,
       series,
       learned_main_examples: 1,
       learned_main_confidence: 100,
@@ -185,7 +187,8 @@ for (const item of report) {
     end_photo: end,
     mode,
     photo_fix_target: Boolean(item.photo_fix_target),
-    remove_first_photo: Boolean(item.photo_fix_target),
+    remove_first_photo: Boolean(item.photo_fix_target) && !firstAlreadyRemovedInGallery,
+    first_already_removed_in_gallery: firstAlreadyRemovedInGallery,
     series,
     learned_main_examples: learned.main ? learned.main.examples : 0,
     learned_main_confidence: learned.main ? learned.main.confidence : 0,
@@ -284,7 +287,7 @@ const inject = `
 
         let text = '🤖 Автопідбір: ';
         if (s.mode === 'saved_manual_choice') {
-          if (s.remove_first_photo) text += '<b>Фото №1 (різновиди) видалено.</b> ';
+          if (s.remove_first_photo || s.first_already_removed_in_gallery) text += '<b>Фото №1 (різновиди) видалено.</b> ';
           text += s.main_photo ? '<b>Фото №' + s.main_photo + ' головне</b>.' : '<b>головне не задане</b>.';
           if (s.end_photo) text += ' <b>Фото №' + s.end_photo + ' → в кінець</b>.';
           text += '<br><small>Взято прямо з твого вже збереженого ручного вибору для цього товару.</small>';
