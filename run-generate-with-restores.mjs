@@ -86,9 +86,10 @@ source =
   '  "superium",\n  "supercat"\n];' +
   source.slice(collarPriceMarkerIndex + collarPriceMarker.length);
 
-// Photo-review gallery: after the old PHOTO_FIX batch is reviewed,
-// continue with every unreviewed COLLAR-family product instead of filtering
-// the report down to PHOTO_FIX only. Existing manual choices stay excluded.
+// Full Collar photo audit: show every current COLLAR-family product again,
+// including products reviewed earlier. Previous choices are only suggestions;
+// the gallery must use the current source photo order so changed supplier photos
+// can be checked again against the fresh Rozetka assortment.
 const reportStart = source.indexOf("async function buildCollarPhotoReport()");
 const reportEnd = reportStart >= 0
   ? source.indexOf("function escapeHtml", reportStart)
@@ -105,7 +106,25 @@ if (!reportSource.includes(photoFixOnlyMarker)) {
 }
 reportSource = reportSource.replace(
   photoFixOnlyMarker,
-  `    // Показуємо всі ще не перевірені товари COLLAR-family, не лише старий PHOTO_FIX.\n`
+  `    // Повний аудит: показуємо весь актуальний COLLAR-family, не лише PHOTO_FIX.\n`
+);
+
+const reportWhitelistMarker = `    // Беремо тільки товари, які реально входять у каталог Rozetka\n    if (!whitelist.has(String(targetId))) continue;`;
+if (!reportSource.includes(reportWhitelistMarker)) {
+  throw new Error("Safety stop: COLLAR report whitelist marker not found");
+}
+reportSource = reportSource.replace(
+  reportWhitelistMarker,
+  `    // Беремо всі товари, які потрапляють у поточний фід Rozetka:\n    // whitelist + перевірені restore + нові Prom-картки після контрольного ID.\n    const sourceIdNumberForReport = Number(sourceId);\n    const isCurrentFeedProductForReport =\n      whitelist.has(String(targetId)) ||\n      RESTORE_OFFER_IDS.has(String(targetId)) ||\n      (Number.isSafeInteger(sourceIdNumberForReport) && sourceIdNumberForReport > AUTO_NEW_AFTER_PROM_ID);\n    if (!isCurrentFeedProductForReport) continue;`
+);
+
+const reviewedSkipMarker = `    // Старі товари, які вже вручну перевірені, вдруге не показуємо\n    if (collarPhotoChoices[String(targetId)]) continue;\n`;
+if (!reportSource.includes(reviewedSkipMarker)) {
+  throw new Error("Safety stop: reviewed Collar skip marker not found");
+}
+reportSource = reportSource.replace(
+  reviewedSkipMarker,
+  `    // Раніше перевірені товари теж показуємо повторно: фото постачальника могли змінитися.\n`
 );
 
 const photoFixTargetMarker = "      photo_fix_target: true,";
@@ -115,6 +134,15 @@ if ((reportSource.match(/photo_fix_target: true,/g) || []).length !== 1) {
 reportSource = reportSource.replace(
   photoFixTargetMarker,
   "      photo_fix_target: photoFixSet.has(String(targetId)) || ROZETKA_VARIANTS_FIRST_REMOVE_IDS.has(String(targetId)),"
+);
+
+const manualChoiceMarker = "      manual_choice: false,";
+if ((reportSource.match(/manual_choice: false,/g) || []).length !== 1) {
+  throw new Error("Safety stop: expected one manual_choice marker in report");
+}
+reportSource = reportSource.replace(
+  manualChoiceMarker,
+  "      manual_choice: Boolean(collarPhotoChoices[String(targetId)]),"
 );
 
 source = source.slice(0, reportStart) + reportSource + source.slice(reportEnd);
