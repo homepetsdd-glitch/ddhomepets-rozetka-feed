@@ -9,6 +9,7 @@ on:
       - "collar-photo-choices.json"
       - "collar-photo-choices-extra.json"
       - "collar-photo-choices.latest.json.gz.b64"
+      - "validate-collar-photo-choices.py"
       - ".github/workflows/publish-feed.yml"
   schedule:
     - cron: "7 * * * *"
@@ -64,6 +65,9 @@ jobs:
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node apply-audit-photo-removals.mjs
+
+      - name: Guard saved Collar photo order
+        run: python3 validate-collar-photo-choices.py
 
       - name: Validate generated XML
         run: |
