@@ -47,6 +47,11 @@ jobs:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node build-collar-photo-suggestions.mjs
 
+      - name: Apply confirmed Collar audit photo removals
+        env:
+          PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
+        run: node apply-audit-photo-removals.mjs
+
       - name: Validate generated XML
         run: |
           python3 - <<'PY'
