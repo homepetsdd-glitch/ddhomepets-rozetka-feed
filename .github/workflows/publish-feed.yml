@@ -37,6 +37,11 @@ jobs:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node run-generate-with-restores.mjs
 
+      - name: Add Rozetka confirmation photo-review items
+        env:
+          PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
+        run: node append-rozetka-photo-review.mjs
+
       - name: Build Collar photo suggestions
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
