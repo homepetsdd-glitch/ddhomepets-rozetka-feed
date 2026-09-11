@@ -51,7 +51,11 @@ function isCollarFamily(offer) {
 }
 
 function cardHtml(item) {
-  const images = item.pictures.map(p => `
+  const visiblePictures = item.photo_fix_target
+    ? item.pictures.filter(p => Number(p.position) !== 1)
+    : item.pictures;
+
+  const images = visiblePictures.map(p => `
   <div class="photo">
     <div class="position">Фото №${p.position}</div>
     <img
@@ -75,7 +79,7 @@ function cardHtml(item) {
 
   return `
 <section
-  class="card rozetka-review"
+  class="card rozetka-review ${item.photo_fix_target ? "photo-fix" : ""}"
   data-id="${esc(item.rozetka_offer_id)}"
 >
   <div class="info">
@@ -83,8 +87,8 @@ function cardHtml(item) {
     <div><b>Rozetka ID:</b> ${esc(item.rozetka_offer_id)}</div>
     <div><b>Prom ID:</b> ${esc(item.source_id)}</div>
     <div><b>Артикул:</b> ${esc(item.article)}</div>
-    <div><b>Кількість фото:</b> ${item.pictures_count}</div>
-    <div class="status rozetka-review-status">📋 Є у файлі підтвердження Rozetka — перевір фото</div>
+    <div><b>Кількість фото:</b> ${item.photo_fix_target ? visiblePictures.length : item.pictures_count}</div>
+    <div class="status rozetka-review-status">📋 Є у файлі підтвердження Rozetka — фото №1 «різновиди» прибране</div>
   </div>
   <div class="review-buttons">
     <button onclick="markReview('${esc(item.rozetka_offer_id)}', 'ok', this)">
@@ -164,7 +168,7 @@ for (const id of wanted) {
     article: tag(offer, "article"),
     name: tag(offer, "name_ua") || tag(offer, "name"),
     vendor: tag(offer, "vendor") || null,
-    photo_fix_target: false,
+    photo_fix_target: true,
     rozetka_review_target: true,
     manual_choice: false,
     pictures_count: pics.length,
