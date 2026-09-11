@@ -27,16 +27,20 @@ function offerId(xml) {
 }
 
 function seriesKey(name = "") {
-  let s = String(name).toLowerCase();
-  s = s.split(/,\s*(?:малюнок|рисунок|принт|колір|цвет|розмір|размер)\b/i)[0];
+  let s = String(name).toLowerCase().trim();
+
+  // Product titles usually put print/size/color variants after the first comma.
+  // Using the stable prefix groups the same model across prints and sizes, e.g.
+  // "Дощовик ... WAUDOG Clothes, малюнок ..." -> one WAUDOG Clothes series.
+  const commaIndex = s.indexOf(",");
+  if (commaIndex > 0) s = s.slice(0, commaIndex);
+
   s = s
     .replace(/[«»“”„"'`’]/g, " ")
     .replace(/[()\[\]{},.:;!?/\\|+_=–—-]/g, " ")
-    .replace(/\b(?:xxxs|xxs|xxl|xxxl|xs|xl|s|m|l)\b/gi, " ")
-    .replace(/\b\d+(?:[.,]\d+)?\s*(?:мм|см|м|кг|г|л|ml|kg|cm|mm)\b/gi, " ")
-    .replace(/\b\d+(?:[.,]\d+)?\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
   return s;
 }
 
@@ -61,7 +65,7 @@ for (const m of feed.matchAll(/<offer\b[\s\S]*?<\/offer>/gi)) {
   meta.set(id, { id, name, series: seriesKey(name) });
 }
 
-// Learn only the user's MANUAL "to end" choices, grouped by product series.
+// Learn only the user's manual "to end" choices, grouped by product series.
 // We do not copy a single product blindly. A position is trusted only when there
 // are at least 3 reviewed examples in the same series and >=70% agree.
 const seriesStats = new Map();
@@ -125,7 +129,92 @@ fs.writeFileSync(OUT_FILE, JSON.stringify(suggestions, null, 2) + "\n", "utf8");
 
 let html = fs.readFileSync(GALLERY_FILE, "utf8");
 const payload = escJsJson(suggestions);
-const inject = `\n<script>\n(() => {\n  const suggestions = ${payload};\n\n  function clearAutoVisuals(card) {\n    card.querySelectorAll('.photo').forEach(photo => {\n      photo.classList.remove('selected-main');\n      photo.classList.remove('selected-end');\n    });\n    delete card.dataset.mainPhoto;\n    delete card.dataset.endPhoto;\n  }\n\n  function applyVisual(card, kind, position) {\n    if (!position) return;\n    const photos = card.querySelectorAll('.photo');\n    const photo = photos[Number(position) - 1];\n    if (!photo) return;\n    photo.classList.add(kind === 'main' ? 'selected-main' : 'selected-end');\n    card.dataset[kind === 'main' ? 'mainPhoto' : 'endPhoto'] = String(position);\n  }\n\n  document.addEventListener('DOMContentLoaded', () => {\n    let applied = 0;\n    let endApplied = 0;\n\n    document.querySelectorAll('.card').forEach(card => {\n      const id = card.dataset.id;\n      const s = suggestions[id];\n      if (!s) return;\n\n      const savedReview = localStorage.getItem('collar_review_' + id);\n      if (savedReview && savedReview !== 'auto') return;\n\n      if (savedReview === 'auto') {\n        localStorage.removeItem('collar_main_photo_' + id);\n        localStorage.removeItem('collar_end_photo_' + id);\n        localStorage.removeItem('collar_review_' + id);\n        clearAutoVisuals(card);\n      }\n\n      localStorage.setItem('collar_main_photo_' + id, '1');\n      localStorage.setItem('collar_review_' + id, 'auto');\n      card.dataset.review = 'auto';\n      applyVisual(card, 'main', 1);\n\n      if (s.end_photo) {\n        localStorage.setItem('collar_end_photo_' + id, String(s.end_photo));\n        applyVisual(card, 'end', s.end_photo);\n        endApplied++;\n      }\n\n      const info = card.querySelector('.info');\n      if (info) {\n        const box = document.createElement('div');\n        box.style.marginTop = '8px';\n        box.style.padding = '7px 9px';\n        box.style.background = '#eaf7ea';\n        box.style.border = '1px solid #76a876';\n        let text = '🤖 Автопідбір: <b>Фото №1 лишається головним</b>.';\n        if (s.end_photo) {\n          text += ' <b>Фото №' + s.end_photo + ' → в кінець</b>.' +\n            '<br><small>Це правило підтверджене ' + s.learned_examples +\n            ' твоїми перевіреними товарами цієї серії (' + s.learned_confidence + '% збігу).</small>';\n        } else {\n          text += '<br><small>Для «в кінець» ще немає достатньо однакових перевірених прикладів — не вгадую.</small>';\n        }\n        box.innerHTML = text;\n        info.appendChild(box);\n      }\n      applied++;\n    });\n\n    const filters = document.querySelector('.filters');\n    if (filters) {\n      const badge = document.createElement('span');\n      badge.style.marginLeft = '10px';\n      badge.style.fontWeight = 'bold';\n      badge.textContent = '🤖 Автопідбір: ' + applied + ' · «в кінець»: ' + endApplied;\n      filters.appendChild(badge);\n    }\n  });\n})();\n<\\/script>\n`;
+const inject = `
+<script>
+(() => {
+  const suggestions = ${payload};
+
+  function clearAutoVisuals(card) {
+    card.querySelectorAll('.photo').forEach(photo => {
+      photo.classList.remove('selected-main');
+      photo.classList.remove('selected-end');
+    });
+    delete card.dataset.mainPhoto;
+    delete card.dataset.endPhoto;
+  }
+
+  function applyVisual(card, kind, position) {
+    if (!position) return;
+    const photos = card.querySelectorAll('.photo');
+    const photo = photos[Number(position) - 1];
+    if (!photo) return;
+    photo.classList.add(kind === 'main' ? 'selected-main' : 'selected-end');
+    card.dataset[kind === 'main' ? 'mainPhoto' : 'endPhoto'] = String(position);
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    let applied = 0;
+    let endApplied = 0;
+
+    document.querySelectorAll('.card').forEach(card => {
+      const id = card.dataset.id;
+      const s = suggestions[id];
+      if (!s) return;
+
+      const savedReview = localStorage.getItem('collar_review_' + id);
+      if (savedReview && savedReview !== 'auto') return;
+
+      if (savedReview === 'auto') {
+        localStorage.removeItem('collar_main_photo_' + id);
+        localStorage.removeItem('collar_end_photo_' + id);
+        localStorage.removeItem('collar_review_' + id);
+        clearAutoVisuals(card);
+      }
+
+      localStorage.setItem('collar_main_photo_' + id, '1');
+      localStorage.setItem('collar_review_' + id, 'auto');
+      card.dataset.review = 'auto';
+      applyVisual(card, 'main', 1);
+
+      if (s.end_photo) {
+        localStorage.setItem('collar_end_photo_' + id, String(s.end_photo));
+        applyVisual(card, 'end', s.end_photo);
+        endApplied++;
+      }
+
+      const info = card.querySelector('.info');
+      if (info) {
+        const box = document.createElement('div');
+        box.style.marginTop = '8px';
+        box.style.padding = '7px 9px';
+        box.style.background = '#eaf7ea';
+        box.style.border = '1px solid #76a876';
+        let text = '🤖 Автопідбір: <b>Фото №1 лишається головним</b>.';
+        if (s.end_photo) {
+          text += ' <b>Фото №' + s.end_photo + ' → в кінець</b>.' +
+            '<br><small>Це правило підтверджене ' + s.learned_examples +
+            ' твоїми перевіреними товарами цієї серії (' + s.learned_confidence + '% збігу).</small>';
+        } else {
+          text += '<br><small>Для «в кінець» ще немає достатньо однакових перевірених прикладів — не вгадую.</small>';
+        }
+        box.innerHTML = text;
+        info.appendChild(box);
+      }
+      applied++;
+    });
+
+    const filters = document.querySelector('.filters');
+    if (filters) {
+      const badge = document.createElement('span');
+      badge.style.marginLeft = '10px';
+      badge.style.fontWeight = 'bold';
+      badge.textContent = '🤖 Автопідбір: ' + applied + ' · «в кінець»: ' + endApplied;
+      filters.appendChild(badge);
+    }
+  });
+})();
+</script>
+`;
 
 const bodyIndex = html.lastIndexOf("</body>");
 if (bodyIndex < 0) throw new Error("Suggestion builder: </body> not found in gallery");
