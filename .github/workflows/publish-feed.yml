@@ -11,6 +11,9 @@ on:
       - "collar-photo-choices.json"
       - "collar-photo-choices-extra.json"
       - "collar-photo-choices.latest.json.gz.b64"
+      - "collar-dropship-vendorcodes.gz.b64"
+      - "collar-current-vendorcodes.gz.b64"
+      - "collar-current-stock.json.gz.b64"
       - "apply-audit-photo-removals.mjs"
       - "excluded-offerids.txt"
       - "apply-offer-exclusions.mjs"
@@ -79,6 +82,8 @@ jobs:
         run: node apply-audit-photo-removals.mjs
 
       - name: Permanently exclude blocked offers
+        env:
+          COLLAR_SOURCE_URL: ${{ secrets.COLLAR_SOURCE_URL }}
         run: node apply-offer-exclusions.mjs
 
       - name: Guard saved Collar photo order
