@@ -37,104 +37,81 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-
       - name: Preserve repository photo choices for learner
         run: cp collar-photo-choices.json collar-photo-choices.repo.json
-
       - name: Prepare full Collar audit and saved choices
         run: node prepare-fresh-collar-audit.mjs
-
       - name: Generate filtered Rozetka XML
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node run-generate-with-restores.mjs
-
-      - name: Generate Prom Collar stock XML
+      - name: Generate corrected Prom Collar feed
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
           COLLAR_SOURCE_URL: ${{ secrets.COLLAR_SOURCE_URL }}
         run: node generate-prom-collar-stock.mjs
-
       - name: Add Rozetka confirmation photo-review items
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node append-rozetka-photo-review.mjs
-
       - name: Add remaining 325 Collar review items
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node append-fresh-collar-live-review.mjs
-
       - name: Build Collar photo suggestions
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node build-collar-photo-suggestions.mjs
-
       - name: Apply confirmed Collar audit photo removals
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node apply-audit-photo-removals.mjs
-
       - name: Permanently exclude blocked offers
         env:
           COLLAR_SOURCE_URL: ${{ secrets.COLLAR_SOURCE_URL }}
         run: node apply-offer-exclusions.mjs
-
       - name: Guard saved Collar photo order
         run: python3 validate-collar-photo-choices.py
-
       - name: Guard Rozetka prices
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: python3 validate-prices.py
-
       - name: Guard duplicate photo URLs
         run: python3 validate-photo-duplicates.py
-
       - name: Validate generated XML
         run: |
           python3 - <<'PY'
           import json
           import xml.etree.ElementTree as ET
-
           root = ET.parse("_site/feed.xml").getroot()
           offers = root.findall(".//offer")
           if len(offers) < 3000:
               raise SystemExit(f"Safety stop: only {len(offers)} offers in feed")
-
           with open("_site/stats.json", "r", encoding="utf-8") as f:
               stats = json.load(f)
-
           print(f"XML OK: {len(offers)} offers")
           print(json.dumps(stats, ensure_ascii=False, indent=2))
           PY
-
       - name: Copy WAUDOG images to site
         run: |
           mkdir -p _site/waudog-images
           cp -r waudog-images/* _site/waudog-images/
-
       - name: Setup Pages
         uses: actions/configure-pages@v5
-
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
           path: _site
-
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
