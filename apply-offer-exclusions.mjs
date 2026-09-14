@@ -1,36 +1,34 @@
 import fs from "node:fs";
+import zlib from "node:zlib";
 
 const IDS_FILE = "excluded-offerids.txt";
 const FEED_FILE = "_site/feed.xml";
+const DROP_CODES_FILE = "collar-dropship-vendorcodes.gz.b64";
+const STOCK_SNAPSHOT_FILE = "collar-current-stock.json.gz.b64";
 
-const excluded = new Set(
-  fs.readFileSync(IDS_FILE, "utf8")
-    .split(/\r?\n/)
-    .map(s => s.trim())
-    .filter(Boolean)
-);
+const OWN_COLLAR_OFFERIDS = new Set([
+  "3130719899", "3130776756", "3139690259",
+  "3193655400", "3193646775", "3193648349",
+  "3193677892", "3193668251", "3193686091"
+]);
 
-let xml = fs.readFileSync(FEED_FILE, "utf8");
-let removed = 0;
-
-for (const id of excluded) {
-  const patterns = [
-    new RegExp(`<offer\\b[^>]*\\bid=["']${id}["'][\\s\\S]*?<\\/offer>\\s*`, "g"),
-    new RegExp(`<offer\\b[^>]*\\bofferid=["']${id}["'][\\s\\S]*?<\\/offer>\\s*`, "g")
-  ];
-  for (const pattern of patterns) {
-    xml = xml.replace(pattern, (m) => {
-      removed += 1;
-      return "";
-    });
-  }
+function readGzipText(path) {
+  const b64 = fs.readFileSync(path, "utf8").trim();
+  return zlib.gunzipSync(Buffer.from(b64, "base64")).toString("utf8");
 }
 
-const collarWords = [
-  "collar", "waudog", "waucat", "evolutor", "dog extreme",
-  "airyvest", "puller", "liker", "flyber", "pitchdog",
-  "superium", "supercat"
-];
+function loadDropshipCodes() {
+  return new Set(
+    readGzipText(DROP_CODES_FILE)
+      .split(/\r?\n/)
+      .map(s => s.trim())
+      .filter(Boolean)
+  );
+}
+
+function loadSnapshotStock() {
+  return new Map(Object.entries(JSON.parse(readGzipText(STOCK_SNAPSHOT_FILE))));
+}
 
 function getTag(offer, tag) {
   const m = offer.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
@@ -41,20 +39,9 @@ function getTag(offer, tag) {
     .trim();
 }
 
-function isCollar(offer) {
-  const vendor = getTag(offer, "vendor").toLowerCase();
-  const name = (getTag(offer, "name_ua") || getTag(offer, "name")).toLowerCase();
-  return vendor === "collar" || vendor === "collar company" || collarWords.some(w => name.includes(w));
-}
-
-function getQty(offer) {
-  for (const tag of ["quantity_in_stock", "quantity", "stock_quantity", "stock"]) {
-    const raw = getTag(offer, tag);
-    if (!raw) continue;
-    const n = Number(raw.replace(/\s/g, "").replace(",", "."));
-    if (Number.isFinite(n)) return n;
-  }
-  return null;
+function getOfferId(offer) {
+  const m = offer.match(/<offer\b[^>]*\b(?:id|offerid)=(["'])([^"']+)\1/i);
+  return m ? m[2].trim() : "";
 }
 
 function setAvailable(offer, value) {
@@ -67,25 +54,104 @@ function setAvailable(offer, value) {
   });
 }
 
-let collarMatched = 0;
-let collarUnavailable = 0;
-let collarAvailable = 0;
-let collarSkippedNoQty = 0;
+function setStockQuantity(offer, qty) {
+  const value = String(Math.max(0, Number(qty) || 0));
+  if (/<stock_quantity\b[^>]*>[\s\S]*?<\/stock_quantity>/i.test(offer)) {
+    return offer.replace(/<stock_quantity\b[^>]*>[\s\S]*?<\/stock_quantity>/i, `<stock_quantity>${value}</stock_quantity>`);
+  }
+  return offer.replace(/<\/offer>/i, `<stock_quantity>${value}</stock_quantity></offer>`);
+}
+
+function parseSupplierStock(sourceXml) {
+  const stock = new Map();
+  const offers = sourceXml.match(/<offer\b[\s\S]*?<\/offer>/gi) || [];
+  for (const offer of offers) {
+    const article = getTag(offer, "vendorCode");
+    if (!article) continue;
+    const rawQty = getTag(offer, "quantity_in_stock");
+    const qty = Number(String(rawQty).replace(/\s/g, "").replace(",", "."));
+    if (Number.isFinite(qty) && qty > 0) stock.set(article, qty);
+  }
+  if (stock.size < 3000) {
+    throw new Error(`Safety stop: Collar source returned only ${stock.size} stocked articles`);
+  }
+  return stock;
+}
+
+async function getCollarStock() {
+  const liveUrl = String(process.env.COLLAR_SOURCE_URL || "").trim();
+  if (!liveUrl) {
+    const snapshot = loadSnapshotStock();
+    console.log(`Collar stock source: snapshot (${snapshot.size} articles)`);
+    return snapshot;
+  }
+
+  const response = await fetch(liveUrl, { redirect: "follow" });
+  if (!response.ok) throw new Error(`Collar source HTTP ${response.status}`);
+  const sourceXml = await response.text();
+  const stock = parseSupplierStock(sourceXml);
+  console.log(`Collar stock source: live XML (${stock.size} articles)`);
+  return stock;
+}
+
+const excluded = new Set(
+  fs.readFileSync(IDS_FILE, "utf8")
+    .split(/\r?\n/)
+    .map(s => s.trim())
+    .filter(Boolean)
+);
+
+const dropshipCodes = loadDropshipCodes();
+const collarStock = await getCollarStock();
+
+let xml = fs.readFileSync(FEED_FILE, "utf8");
+let removed = 0;
+
+for (const id of excluded) {
+  const patterns = [
+    new RegExp(`<offer\\b[^>]*\\bid=["']${id}["'][\\s\\S]*?<\\/offer>\\s*`, "g"),
+    new RegExp(`<offer\\b[^>]*\\bofferid=["']${id}["'][\\s\\S]*?<\\/offer>\\s*`, "g")
+  ];
+  for (const pattern of patterns) {
+    xml = xml.replace(pattern, () => {
+      removed += 1;
+      return "";
+    });
+  }
+}
+
+let matched = 0;
+let available = 0;
+let unavailable = 0;
+let ownSkipped = 0;
+let noArticleSkipped = 0;
+let quantityChanged = 0;
 
 xml = xml.replace(/<offer\b[\s\S]*?<\/offer>/gi, offer => {
-  if (!isCollar(offer)) return offer;
-  collarMatched += 1;
-  const qty = getQty(offer);
-  if (qty === null) {
-    collarSkippedNoQty += 1;
+  const id = getOfferId(offer);
+  if (OWN_COLLAR_OFFERIDS.has(id)) {
+    ownSkipped += 1;
     return offer;
   }
-  if (qty <= 0) {
-    collarUnavailable += 1;
-    return setAvailable(offer, false);
+
+  const article = getTag(offer, "article");
+  if (!article) {
+    noArticleSkipped += 1;
+    return offer;
   }
-  collarAvailable += 1;
-  return setAvailable(offer, true);
+  if (!dropshipCodes.has(article)) return offer;
+
+  matched += 1;
+  const qty = Number(collarStock.get(article) || 0);
+  let out = setAvailable(offer, qty > 0);
+
+  const oldQty = Number(String(getTag(offer, "stock_quantity") || "0").replace(/\s/g, "").replace(",", "."));
+  if (!Number.isFinite(oldQty) || oldQty !== qty) quantityChanged += 1;
+  out = setStockQuantity(out, qty);
+
+  if (qty > 0) available += 1;
+  else unavailable += 1;
+  return out;
 });
 
 fs.writeFileSync(FEED_FILE, xml, "utf8");
@@ -98,4 +164,4 @@ for (const id of excluded) {
 
 console.log(`Excluded OFFERIDs: ${[...excluded].join(", ")}`);
 console.log(`Removed offer blocks: ${removed}`);
-console.log(`Collar availability: matched=${collarMatched}, available=${collarAvailable}, unavailable=${collarUnavailable}, skipped_no_qty=${collarSkippedNoQty}`);
+console.log(`Collar dropship sync: allowlist=${dropshipCodes.size}, matched=${matched}, available=${available}, unavailable=${unavailable}, quantity_changed=${quantityChanged}, own_skipped=${ownSkipped}, no_article_skipped=${noArticleSkipped}`);
