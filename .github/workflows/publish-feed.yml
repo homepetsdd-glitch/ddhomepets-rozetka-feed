@@ -17,6 +17,7 @@ on:
       - "apply-audit-photo-removals.mjs"
       - "excluded-offerids.txt"
       - "apply-offer-exclusions.mjs"
+      - "generate-prom-collar-stock.mjs"
       - "validate-collar-photo-choices.py"
       - "validate-prices.py"
       - "validate-photo-duplicates.py"
@@ -60,6 +61,12 @@ jobs:
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node run-generate-with-restores.mjs
+
+      - name: Generate Prom Collar stock XML
+        env:
+          PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
+          COLLAR_SOURCE_URL: ${{ secrets.COLLAR_SOURCE_URL }}
+        run: node generate-prom-collar-stock.mjs
 
       - name: Add Rozetka confirmation photo-review items
         env:
