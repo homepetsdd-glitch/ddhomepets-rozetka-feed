@@ -7,7 +7,14 @@ const OUT_FILE = "_site/prom-collar-feed.xml";
 const OWN_COLLAR_OFFERIDS = new Set([
   "3130719899", "3130776756", "3139690259",
   "3193655400", "3193646775", "3193648349",
-  "3193677892", "3193668251", "3193686091"
+  "3193677892", "3193668251", "3193686091",
+  "3139691224"
+]);
+
+// Власні закупки, які не можна перезаписувати залишками/цінами Collar.
+// 3139691224 — овальна лежанка №1, 41×30×12 см, артикул 1762.
+const OWN_FIXED_OVERRIDES = new Map([
+  ["3139691224", { price: 520, stock: 2 }],
 ]);
 
 function readGzipText(path) {
@@ -52,6 +59,30 @@ function setStockQuantity(offer, qty) {
   return offer.replace(/<\/offer>/i, `<quantity_in_stock>${value}</quantity_in_stock></offer>`);
 }
 
+function setPrice(offer, price) {
+  const value = String(Number(price));
+  if (/<price\b[^>]*>[\s\S]*?<\/price>/i.test(offer)) {
+    return offer.replace(/<price\b[^>]*>[\s\S]*?<\/price>/i, `<price>${value}</price>`);
+  }
+  return offer.replace(/<\/offer>/i, `<price>${value}</price></offer>`);
+}
+
+function removeDiscountTags(offer) {
+  let out = offer;
+  for (const tag of ["oldprice", "price_old", "priceold", "old_price", "price_promo"]) {
+    out = out.replace(new RegExp(`\\s*<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}>`, "gi"), "");
+  }
+  return out;
+}
+
+function applyOwnFixedOverride(offer, override) {
+  let out = removeDiscountTags(offer);
+  out = setPrice(out, override.price);
+  out = setStockQuantity(out, override.stock);
+  out = setAvailable(out, override.stock > 0);
+  return out;
+}
+
 function parseCollarStock(xml) {
   const stock = new Map();
   for (const offer of xml.match(/<offer\b[\s\S]*?<\/offer>/gi) || []) {
@@ -90,7 +121,7 @@ const tail = promXml.slice(closeIndex);
 const offersBlock = promXml.slice(openEnd, closeIndex);
 const offers = offersBlock.match(/<offer\b[\s\S]*?<\/offer>/gi) || [];
 
-let matched = 0, available = 0, unavailable = 0, ownSkipped = 0, noArticle = 0;
+let matched = 0, available = 0, unavailable = 0, ownSkipped = 0, ownFixed = 0, noArticle = 0;
 const outOffers = [];
 
 for (const original of offers) {
@@ -98,7 +129,12 @@ for (const original of offers) {
   const code = getArticle(original);
   let out = original;
 
-  if (OWN_COLLAR_OFFERIDS.has(id)) {
+  const fixed = OWN_FIXED_OVERRIDES.get(id);
+  if (fixed) {
+    out = applyOwnFixedOverride(original, fixed);
+    ownFixed += 1;
+    ownSkipped += 1;
+  } else if (OWN_COLLAR_OFFERIDS.has(id)) {
     ownSkipped += 1;
   } else if (!code) {
     noArticle += 1;
@@ -115,8 +151,9 @@ for (const original of offers) {
 
 if (matched < 3000) throw new Error(`Safety stop: only ${matched} Prom Collar dropship offers matched`);
 if (outOffers.length !== offers.length) throw new Error("Safety stop: source offer count changed");
+if (ownFixed !== OWN_FIXED_OVERRIDES.size) throw new Error(`Safety stop: expected ${OWN_FIXED_OVERRIDES.size} fixed own offers, applied ${ownFixed}`);
 
 fs.mkdirSync("_site", { recursive: true });
 fs.writeFileSync(OUT_FILE, `${head}\n${outOffers.join("\n")}\n${tail}`, "utf8");
-console.log(`Prom corrected feed: source_offers=${offers.length}, output_offers=${outOffers.length}, allowlist=${dropshipCodes.size}, matched=${matched}, available=${available}, unavailable=${unavailable}, own_skipped=${ownSkipped}, no_article=${noArticle}`);
+console.log(`Prom corrected feed: source_offers=${offers.length}, output_offers=${outOffers.length}, allowlist=${dropshipCodes.size}, matched=${matched}, available=${available}, unavailable=${unavailable}, own_skipped=${ownSkipped}, own_fixed=${ownFixed}, no_article=${noArticle}`);
 console.log(`Wrote ${OUT_FILE}`);
