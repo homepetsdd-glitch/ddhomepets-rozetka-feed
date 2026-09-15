@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 
 FEED_FILE = "_site/feed.xml"
 SOURCE_URL = os.environ.get("PROM_SOURCE_URL", "").strip()
+OLD_PRICE_TAGS = ["oldprice", "price_old", "priceold", "old_price"]
 
 if not SOURCE_URL:
     raise SystemExit("Price guard: PROM_SOURCE_URL is missing")
@@ -33,6 +34,20 @@ def parse_price(value):
     except Exception:
         return None
     return p if math.isfinite(p) and p > 0 else None
+
+
+def regular_source_price(offer):
+    current = parse_price(text(offer, "price"))
+    if current is None:
+        return None, False
+    base = current
+    promo = False
+    for tag in OLD_PRICE_TAGS:
+        old = parse_price(text(offer, tag))
+        if old is not None and old > base:
+            base = old
+            promo = True
+    return base, promo
 
 
 def load_collar_articles():
@@ -67,12 +82,6 @@ def load_collar_articles():
 COLLAR_ARTICLES = load_collar_articles()
 
 
-def current_source_price(offer):
-    # Business rule: markup is always calculated from CURRENT Prom <price>.
-    # oldprice / price_old / price_promo are not the base price for Rozetka.
-    return parse_price(text(offer, "price"))
-
-
 def is_collar_family(offer):
     vendor = text(offer, "vendor").lower()
     name = (text(offer, "name_ua") or text(offer, "name")).lower()
@@ -89,18 +98,18 @@ def js_round_positive(x):
 
 
 def expected_rozetka_price(source_offer):
-    base = current_source_price(source_offer)
+    base, promo = regular_source_price(source_offer)
     if base is None:
-        return None
+        return None, promo
     if is_collar_family(source_offer):
-        return base
+        return float(base), promo
     if base <= 500:
         pct = 0.07
     elif base <= 1500:
         pct = 0.05
     else:
         pct = 0.03
-    return float(js_round_positive(base * (1 + pct)))
+    return float(js_round_positive(base * (1 + pct))), promo
 
 
 def unique_index(offers, getter):
@@ -122,7 +131,7 @@ def unique_index(offers, getter):
 req = urllib.request.Request(
     SOURCE_URL,
     headers={
-        "User-Agent": "D&D-Home-Pets-Rozetka-Price-Guard/2.0",
+        "User-Agent": "D&D-Home-Pets-Rozetka-Price-Guard/3.0",
         "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8",
     },
 )
@@ -146,6 +155,7 @@ errors = []
 checked = 0
 collar_checked = 0
 markup_checked = 0
+promo_checked = 0
 matched_by_id = 0
 matched_by_url = 0
 matched_by_article = 0
@@ -157,6 +167,11 @@ for offer in feed_offers:
     if actual is None:
         errors.append(f"{oid or '?'}: invalid or missing final price")
         continue
+
+    # Final feed must not expose sale/old-price tags at all.
+    for tag in OLD_PRICE_TAGS + ["price_promo"]:
+        if text(offer, tag):
+            errors.append(f"{oid}: discount tag <{tag}> leaked into final feed")
 
     source_offer = source_by_id.get(oid)
     if source_offer is not None:
@@ -176,12 +191,14 @@ for offer in feed_offers:
         skipped_missing += 1
         continue
 
-    expected = expected_rozetka_price(source_offer)
+    expected, promo = expected_rozetka_price(source_offer)
     if expected is None:
-        errors.append(f"{oid}: source current <price> is invalid")
+        errors.append(f"{oid}: source regular price is invalid")
         continue
 
     checked += 1
+    if promo:
+        promo_checked += 1
     if is_collar_family(source_offer):
         collar_checked += 1
     else:
@@ -189,14 +206,14 @@ for offer in feed_offers:
 
     if abs(actual - expected) > 0.01:
         family = "COLLAR/no markup" if is_collar_family(source_offer) else "markup rule"
+        base, _ = regular_source_price(source_offer)
         errors.append(
-            f"{oid}: WRONG PRICE — expected {expected:g} from current Prom <price> by {family}, got {actual:g}"
+            f"{oid}: WRONG PRICE — expected {expected:g} from regular Prom price {base:g} by {family}, got {actual:g}"
         )
 
 if checked < 3300:
     errors.append(
-        f"price validation coverage too low: checked only {checked} matched offers; "
-        f"skipped {skipped_missing}"
+        f"price validation coverage too low: checked only {checked} matched offers; skipped {skipped_missing}"
     )
 
 if errors:
@@ -210,6 +227,7 @@ if errors:
 print(
     "Price guard OK: "
     f"{checked} offers checked; "
+    f"{promo_checked} source promo offers verified from regular pre-discount price; "
     f"{collar_checked} COLLAR-family prices confirmed without markup; "
     f"{markup_checked} non-COLLAR prices confirmed by 7%/5%/3% rules; "
     f"matches id/url/article={matched_by_id}/{matched_by_url}/{matched_by_article}; "
