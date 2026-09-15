@@ -1,3 +1,5 @@
+import gzip
+import json
 import math
 import os
 import sys
@@ -12,10 +14,10 @@ if not SOURCE_URL:
 if not os.path.exists(FEED_FILE):
     raise SystemExit(f"Price guard: missing {FEED_FILE}")
 
-OLD_PRICE_TAGS = ["oldprice", "price_old", "priceold", "old_price"]
 COLLAR_WORDS = [
     "collar", "waudog", "waucat", "evolutor", "dog extreme", "dog extremе",
-    "airyvest", "puller", "liker", "flyber", "pitchdog", "superium", "supercat"
+    "airyvest", "puller", "liker", "flyber", "pitchdog", "superium", "supercat",
+    "gigwi", "pet's lab", "pets lab", "pet’s lab", "teremok"
 ]
 
 
@@ -33,18 +35,50 @@ def parse_price(value):
     return p if math.isfinite(p) and p > 0 else None
 
 
-def regular_source_price(offer):
-    # Generator intentionally removes Prom promo pricing and uses the regular/old price when supplied.
-    for tag in OLD_PRICE_TAGS:
-        p = parse_price(text(offer, tag))
-        if p is not None:
-            return p
+def load_collar_articles():
+    out = set()
+    for path in ["collar-current-vendorcodes.gz.b64", "collar-dropship-vendorcodes.gz.b64"]:
+        if not os.path.exists(path):
+            continue
+        try:
+            import base64
+            packed = open(path, "r", encoding="utf-8").read().strip()
+            raw = gzip.decompress(base64.b64decode(packed)).decode("utf-8").strip()
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    values = parsed
+                elif isinstance(parsed, dict):
+                    values = list(parsed.keys())
+                else:
+                    values = []
+            except Exception:
+                import re
+                values = re.split(r"[\r\n,;\t]+", raw)
+            for value in values:
+                key = str(value or "").strip().lower()
+                if key:
+                    out.add(key)
+        except Exception as exc:
+            print(f"Price guard warning: could not read {path}: {exc}", file=sys.stderr)
+    return out
+
+
+COLLAR_ARTICLES = load_collar_articles()
+
+
+def current_source_price(offer):
+    # Business rule: markup is always calculated from CURRENT Prom <price>.
+    # oldprice / price_old / price_promo are not the base price for Rozetka.
     return parse_price(text(offer, "price"))
 
 
 def is_collar_family(offer):
     vendor = text(offer, "vendor").lower()
     name = (text(offer, "name_ua") or text(offer, "name")).lower()
+    article = text(offer, "article").strip().lower()
+    if article and article in COLLAR_ARTICLES:
+        return True
     if vendor in {"collar", "collar company"}:
         return True
     return any(word in vendor or word in name for word in COLLAR_WORDS)
@@ -55,7 +89,7 @@ def js_round_positive(x):
 
 
 def expected_rozetka_price(source_offer):
-    base = regular_source_price(source_offer)
+    base = current_source_price(source_offer)
     if base is None:
         return None
     if is_collar_family(source_offer):
@@ -68,11 +102,27 @@ def expected_rozetka_price(source_offer):
         pct = 0.03
     return float(js_round_positive(base * (1 + pct)))
 
-# Read the exact current Prom source used as the business-price reference.
+
+def unique_index(offers, getter):
+    out = {}
+    duplicates = set()
+    for offer in offers:
+        key = str(getter(offer) or "").strip().lower()
+        if not key:
+            continue
+        if key in out:
+            duplicates.add(key)
+        else:
+            out[key] = offer
+    for key in duplicates:
+        out.pop(key, None)
+    return out
+
+
 req = urllib.request.Request(
     SOURCE_URL,
     headers={
-        "User-Agent": "D&D-Home-Pets-Rozetka-Price-Guard/1.0",
+        "User-Agent": "D&D-Home-Pets-Rozetka-Price-Guard/2.0",
         "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8",
     },
 )
@@ -80,11 +130,14 @@ with urllib.request.urlopen(req, timeout=90) as response:
     source_xml = response.read()
 
 source_root = ET.fromstring(source_xml)
-source_offers = {
+source_list = [o for o in source_root.findall(".//offer")]
+source_by_id = {
     str(o.get("id") or "").strip(): o
-    for o in source_root.findall(".//offer")
+    for o in source_list
     if str(o.get("id") or "").strip()
 }
+source_by_url = unique_index(source_list, lambda o: text(o, "url"))
+source_by_article = unique_index(source_list, lambda o: text(o, "article"))
 
 feed_root = ET.parse(FEED_FILE).getroot()
 feed_offers = [o for o in feed_root.findall(".//offer")]
@@ -93,7 +146,10 @@ errors = []
 checked = 0
 collar_checked = 0
 markup_checked = 0
-skipped_remapped_or_missing = 0
+matched_by_id = 0
+matched_by_url = 0
+matched_by_article = 0
+skipped_missing = 0
 
 for offer in feed_offers:
     oid = str(offer.get("id") or "").strip()
@@ -102,15 +158,27 @@ for offer in feed_offers:
         errors.append(f"{oid or '?'}: invalid or missing final price")
         continue
 
-    source_offer = source_offers.get(oid)
+    source_offer = source_by_id.get(oid)
+    if source_offer is not None:
+        matched_by_id += 1
+    else:
+        url = text(offer, "url").strip().lower()
+        source_offer = source_by_url.get(url) if url else None
+        if source_offer is not None:
+            matched_by_url += 1
+        else:
+            article = text(offer, "article").strip().lower()
+            source_offer = source_by_article.get(article) if article else None
+            if source_offer is not None:
+                matched_by_article += 1
+
     if source_offer is None:
-        # Remapped legacy OFFERIDs do not necessarily have the same source ID.
-        skipped_remapped_or_missing += 1
+        skipped_missing += 1
         continue
 
     expected = expected_rozetka_price(source_offer)
     if expected is None:
-        errors.append(f"{oid}: source price is invalid")
+        errors.append(f"{oid}: source current <price> is invalid")
         continue
 
     checked += 1
@@ -122,14 +190,13 @@ for offer in feed_offers:
     if abs(actual - expected) > 0.01:
         family = "COLLAR/no markup" if is_collar_family(source_offer) else "markup rule"
         errors.append(
-            f"{oid}: WRONG PRICE — expected {expected:g} by {family}, got {actual:g}"
+            f"{oid}: WRONG PRICE — expected {expected:g} from current Prom <price> by {family}, got {actual:g}"
         )
 
-# Coverage safety: this validator should check the overwhelming majority of the catalog.
 if checked < 3300:
     errors.append(
-        f"price validation coverage too low: checked only {checked} direct-ID offers; "
-        f"skipped {skipped_remapped_or_missing}"
+        f"price validation coverage too low: checked only {checked} matched offers; "
+        f"skipped {skipped_missing}"
     )
 
 if errors:
@@ -142,8 +209,9 @@ if errors:
 
 print(
     "Price guard OK: "
-    f"{checked} direct-ID offers checked; "
+    f"{checked} offers checked; "
     f"{collar_checked} COLLAR-family prices confirmed without markup; "
     f"{markup_checked} non-COLLAR prices confirmed by 7%/5%/3% rules; "
-    f"{skipped_remapped_or_missing} remapped/missing-source IDs skipped."
+    f"matches id/url/article={matched_by_id}/{matched_by_url}/{matched_by_article}; "
+    f"{skipped_missing} source-missing offers skipped."
 )
