@@ -5,42 +5,30 @@ import { gunzipSync } from "node:zlib";
 const FEED_FILE = "_site/feed.xml";
 const STATS_FILE = "_site/stats.json";
 const SOURCE_URL = String(process.env.PROM_SOURCE_URL || "").trim();
+const OLD_PRICE_TAGS = ["oldprice", "price_old", "priceold", "old_price"];
 
 if (!SOURCE_URL) throw new Error("PROM_SOURCE_URL is missing");
 if (!existsSync(FEED_FILE)) throw new Error(`Missing ${FEED_FILE}`);
 
 const COLLAR_WORDS = [
-  "collar",
-  "waudog",
-  "waucat",
-  "evolutor",
-  "dog extreme",
-  "dog extremе",
-  "airyvest",
-  "puller",
-  "liker",
-  "flyber",
-  "pitchdog",
-  "superium",
-  "supercat",
-  "gigwi",
-  "pet's lab",
-  "pets lab",
-  "pet’s lab",
-  "teremok",
+  "collar", "waudog", "waucat", "evolutor", "dog extreme", "dog extremе",
+  "airyvest", "puller", "liker", "flyber", "pitchdog", "superium", "supercat",
+  "gigwi", "pet's lab", "pets lab", "pet’s lab", "teremok",
 ];
 
 function unwrap(value) {
-  return String(value || "")
-    .replace(/^<!\[CDATA\[/i, "")
-    .replace(/\]\]>$/i, "")
-    .trim();
+  return String(value || "").replace(/^<!\[CDATA\[/i, "").replace(/\]\]>$/i, "").trim();
 }
 
 function getTagValue(xml, tag) {
   const re = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
   const m = xml.match(re);
   return m ? unwrap(m[1]) : null;
+}
+
+function removeTag(xml, tag) {
+  const re = new RegExp(`\\s*<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}>`, "gi");
+  return xml.replace(re, "");
 }
 
 function getOfferId(xml) {
@@ -50,9 +38,7 @@ function getOfferId(xml) {
 
 function setMainPrice(xml, value) {
   const re = /(<price\b[^>]*>)[\s\S]*?(<\/price>)/i;
-  if (re.test(xml)) {
-    return xml.replace(re, (full, openTag, closeTag) => `${openTag}${value}${closeTag}`);
-  }
+  if (re.test(xml)) return xml.replace(re, (full, openTag, closeTag) => `${openTag}${value}${closeTag}`);
   return xml.replace(/(<offer\b[^>]*>)/i, `$1<price>${value}</price>`);
 }
 
@@ -63,6 +49,22 @@ function parsePrice(value) {
 
 function normalizeKey(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function getRegularPrice(sourceOffer) {
+  const current = parsePrice(getTagValue(sourceOffer, "price"));
+  if (current === null) return { base: null, promoDetected: false };
+
+  let base = current;
+  let promoDetected = false;
+  for (const tag of OLD_PRICE_TAGS) {
+    const old = parsePrice(getTagValue(sourceOffer, tag));
+    if (old !== null && old > base) {
+      base = old;
+      promoDetected = true;
+    }
+  }
+  return { base, promoDetected };
 }
 
 function loadCollarArticles() {
@@ -95,11 +97,8 @@ const COLLAR_ARTICLES = loadCollarArticles();
 
 function isCollarFamily(sourceOffer) {
   const vendor = normalizeKey(getTagValue(sourceOffer, "vendor"));
-  const name = normalizeKey(
-    getTagValue(sourceOffer, "name_ua") || getTagValue(sourceOffer, "name") || ""
-  );
+  const name = normalizeKey(getTagValue(sourceOffer, "name_ua") || getTagValue(sourceOffer, "name") || "");
   const article = normalizeKey(getTagValue(sourceOffer, "article"));
-
   if (article && COLLAR_ARTICLES.has(article)) return true;
   if (vendor === "collar" || vendor === "collar company") return true;
   return COLLAR_WORDS.some((word) => vendor.includes(word) || name.includes(word));
@@ -114,16 +113,14 @@ function addUnique(map, key, offer) {
 
 const sourceResponse = await fetch(SOURCE_URL, {
   headers: {
-    "User-Agent": "D&D-Home-Pets-Rozetka-Price-Rules/1.0",
+    "User-Agent": "D&D-Home-Pets-Rozetka-Price-Rules/2.0",
     "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8",
   },
 });
-if (!sourceResponse.ok) {
-  throw new Error(`Prom XML error: ${sourceResponse.status} ${sourceResponse.statusText}`);
-}
+if (!sourceResponse.ok) throw new Error(`Prom XML error: ${sourceResponse.status} ${sourceResponse.statusText}`);
+
 const sourceXml = await sourceResponse.text();
 const sourceOffers = sourceXml.match(/<offer\b[\s\S]*?<\/offer>/gi) || [];
-
 const byId = new Map();
 const byUrl = new Map();
 const byArticle = new Map();
@@ -137,13 +134,10 @@ for (const offer of sourceOffers) {
 function findSourceOffer(finalOffer) {
   const id = getOfferId(finalOffer);
   if (id && byId.has(id)) return { offer: byId.get(id), matchedBy: "id" };
-
   const url = normalizeKey(getTagValue(finalOffer, "url"));
   if (url && byUrl.get(url)) return { offer: byUrl.get(url), matchedBy: "url" };
-
   const article = normalizeKey(getTagValue(finalOffer, "article"));
   if (article && byArticle.get(article)) return { offer: byArticle.get(article), matchedBy: "article" };
-
   return { offer: null, matchedBy: null };
 }
 
@@ -156,9 +150,11 @@ const stats = {
   matched_by_article: 0,
   unmatched: 0,
   invalid_source_price: 0,
+  promo_source_detected: 0,
   collar_no_markup: 0,
   non_collar_marked_up: 0,
   changed_prices: 0,
+  discount_tags_removed: 0,
 };
 
 const correctedXml = finalXml.replace(/<offer\b[\s\S]*?<\/offer>/gi, (finalOffer) => {
@@ -170,37 +166,38 @@ const correctedXml = finalXml.replace(/<offer\b[\s\S]*?<\/offer>/gi, (finalOffer
   }
   stats[`matched_by_${found.matchedBy}`]++;
 
-  // IMPORTANT: the business-price base is the CURRENT Prom <price>.
-  // oldprice / price_old / price_promo must never replace it.
-  const baseRaw = getTagValue(found.offer, "price");
-  const base = parsePrice(baseRaw);
+  const { base, promoDetected } = getRegularPrice(found.offer);
   if (base === null) {
     stats.invalid_source_price++;
     return finalOffer;
   }
+  if (promoDetected) stats.promo_source_detected++;
 
   let targetPrice;
   if (isCollarFamily(found.offer)) {
+    targetPrice = String(base);
     stats.collar_no_markup++;
-    targetPrice = String(baseRaw).replace(/\s/g, "").replace(",", ".");
   } else {
     const pct = base <= 500 ? 0.07 : base <= 1500 ? 0.05 : 0.03;
     targetPrice = String(Math.round(base * (1 + pct)));
     stats.non_collar_marked_up++;
   }
 
+  let updated = setMainPrice(finalOffer, targetPrice);
+  for (const tag of [...OLD_PRICE_TAGS, "price_promo"]) {
+    if (getTagValue(updated, tag) !== null) stats.discount_tags_removed++;
+    updated = removeTag(updated, tag);
+  }
+
   const current = getTagValue(finalOffer, "price");
   if (String(current || "").trim() !== targetPrice) stats.changed_prices++;
-  return setMainPrice(finalOffer, targetPrice);
+  return updated;
 });
 
 await writeFile(FEED_FILE, correctedXml, "utf8");
 
 let allStats = {};
-try {
-  allStats = JSON.parse(await readFile(STATS_FILE, "utf8"));
-} catch {}
+try { allStats = JSON.parse(await readFile(STATS_FILE, "utf8")); } catch {}
 allStats.price_rules = stats;
 await writeFile(STATS_FILE, JSON.stringify(allStats, null, 2) + "\n", "utf8");
-
 console.log("Rozetka price rules applied:", JSON.stringify(stats, null, 2));
