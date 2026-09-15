@@ -18,6 +18,7 @@ on:
       - "excluded-offerids.txt"
       - "apply-offer-exclusions.mjs"
       - "generate-prom-collar-stock.mjs"
+      - "apply-price-rules.mjs"
       - "validate-collar-photo-choices.py"
       - "validate-prices.py"
       - "validate-photo-duplicates.py"
@@ -80,6 +81,10 @@ jobs:
         env:
           COLLAR_SOURCE_URL: ${{ secrets.COLLAR_SOURCE_URL }}
         run: node apply-offer-exclusions.mjs
+      - name: Apply final Rozetka price rules
+        env:
+          PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
+        run: node apply-price-rules.mjs
       - name: Guard saved Collar photo order
         run: python3 validate-collar-photo-choices.py
       - name: Guard Rozetka prices
