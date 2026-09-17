@@ -2,6 +2,7 @@ import fs from "node:fs";
 import zlib from "node:zlib";
 
 const IDS_FILE = "excluded-offerids.txt";
+const OWN_MANUAL_CODES_FILE = "own-manual-collar-vendorcodes.txt";
 const FEED_FILE = "_site/feed.xml";
 const DROP_CODES_FILE = "collar-dropship-vendorcodes.gz.b64";
 const STOCK_SNAPSHOT_FILE = "collar-current-stock.json.gz.b64";
@@ -26,6 +27,15 @@ function loadDropshipCodes() {
   );
 }
 
+function loadOwnManualCodes() {
+  return new Set(
+    fs.readFileSync(OWN_MANUAL_CODES_FILE, "utf8")
+      .split(/\r?\n/)
+      .map(s => s.trim())
+      .filter(Boolean)
+  );
+}
+
 function loadSnapshotStock() {
   return new Map(Object.entries(JSON.parse(readGzipText(STOCK_SNAPSHOT_FILE))));
 }
@@ -42,6 +52,10 @@ function getTag(offer, tag) {
 function getOfferId(offer) {
   const m = offer.match(/<offer\b[^>]*\b(?:id|offerid)=(["'])([^"']+)\1/i);
   return m ? m[2].trim() : "";
+}
+
+function getArticle(offer) {
+  return getTag(offer, "article") || getTag(offer, "vendorCode") || getTag(offer, "code");
 }
 
 function setAvailable(offer, value) {
@@ -101,6 +115,7 @@ const excluded = new Set(
     .filter(Boolean)
 );
 
+const ownManualCodes = loadOwnManualCodes();
 const dropshipCodes = loadDropshipCodes();
 const collarStock = await getCollarStock();
 
@@ -120,6 +135,18 @@ for (const id of excluded) {
   }
 }
 
+// Власний склад Collar: повністю прибираємо ці артикули з Rozetka-фіда.
+// Тому синхронізація не може змінити їм ціну, залишок, наявність, опис чи фото.
+let ownManualRemoved = 0;
+xml = xml.replace(/<offer\b[\s\S]*?<\/offer>/gi, offer => {
+  const article = getArticle(offer);
+  if (article && ownManualCodes.has(article)) {
+    ownManualRemoved += 1;
+    return "";
+  }
+  return offer;
+});
+
 let matched = 0;
 let available = 0;
 let unavailable = 0;
@@ -134,7 +161,7 @@ xml = xml.replace(/<offer\b[\s\S]*?<\/offer>/gi, offer => {
     return offer;
   }
 
-  const article = getTag(offer, "article");
+  const article = getArticle(offer);
   if (!article) {
     noArticleSkipped += 1;
     return offer;
@@ -162,6 +189,14 @@ for (const id of excluded) {
   }
 }
 
+for (const offer of xml.match(/<offer\b[\s\S]*?<\/offer>/gi) || []) {
+  const article = getArticle(offer);
+  if (article && ownManualCodes.has(article)) {
+    throw new Error(`Safety stop: own-stock Collar article ${article} is still present in Rozetka feed`);
+  }
+}
+
 console.log(`Excluded OFFERIDs: ${[...excluded].join(", ")}`);
 console.log(`Removed offer blocks: ${removed}`);
+console.log(`Own-stock Collar: list=${ownManualCodes.size}, removed_from_rozetka_feed=${ownManualRemoved}`);
 console.log(`Collar dropship sync: allowlist=${dropshipCodes.size}, matched=${matched}, available=${available}, unavailable=${unavailable}, quantity_changed=${quantityChanged}, own_skipped=${ownSkipped}, no_article_skipped=${noArticleSkipped}`);
