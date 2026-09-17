@@ -3,7 +3,9 @@ import zlib from "node:zlib";
 
 const IDS_FILE = "excluded-offerids.txt";
 const OWN_MANUAL_CODES_FILE = "own-manual-collar-vendorcodes.txt";
+const CHOICES_FILE = "collar-photo-choices.json";
 const FEED_FILE = "_site/feed.xml";
+const STATS_FILE = "_site/stats.json";
 const DROP_CODES_FILE = "collar-dropship-vendorcodes.gz.b64";
 const STOCK_SNAPSHOT_FILE = "collar-current-stock.json.gz.b64";
 
@@ -116,6 +118,9 @@ const excluded = new Set(
 );
 
 const ownManualCodes = loadOwnManualCodes();
+const savedChoices = fs.existsSync(CHOICES_FILE)
+  ? JSON.parse(fs.readFileSync(CHOICES_FILE, "utf8"))
+  : {};
 const dropshipCodes = loadDropshipCodes();
 const collarStock = await getCollarStock();
 
@@ -138,9 +143,12 @@ for (const id of excluded) {
 // Власний склад Collar: повністю прибираємо ці артикули з Rozetka-фіда.
 // Тому синхронізація не може змінити їм ціну, залишок, наявність, опис чи фото.
 let ownManualRemoved = 0;
+let ownManualRemovedChoices = 0;
 xml = xml.replace(/<offer\b[\s\S]*?<\/offer>/gi, offer => {
   const article = getArticle(offer);
   if (article && ownManualCodes.has(article)) {
+    const id = getOfferId(offer);
+    if (id && savedChoices[id]) ownManualRemovedChoices += 1;
     ownManualRemoved += 1;
     return "";
   }
@@ -183,6 +191,18 @@ xml = xml.replace(/<offer\b[\s\S]*?<\/offer>/gi, offer => {
 
 fs.writeFileSync(FEED_FILE, xml, "utf8");
 
+// Генератор рахує збережені фото-вибори до фінального виключення власних закупок.
+// Коригуємо статистику, щоб захисний валідатор порівнював її вже з фінальним фідом.
+if (fs.existsSync(STATS_FILE)) {
+  const stats = JSON.parse(fs.readFileSync(STATS_FILE, "utf8"));
+  const before = Number(stats.collar_photo_choices_applied || 0);
+  stats.collar_photo_choices_applied = Math.max(0, before - ownManualRemovedChoices);
+  stats.own_manual_collar_list = ownManualCodes.size;
+  stats.own_manual_collar_removed = ownManualRemoved;
+  stats.own_manual_collar_saved_choices_removed = ownManualRemovedChoices;
+  fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2) + "\n", "utf8");
+}
+
 for (const id of excluded) {
   if (xml.includes(`id=\"${id}\"`) || xml.includes(`id='${id}'`) || xml.includes(`offerid=\"${id}\"`) || xml.includes(`offerid='${id}'`)) {
     throw new Error(`Safety stop: excluded OFFERID ${id} is still present in feed`);
@@ -198,5 +218,5 @@ for (const offer of xml.match(/<offer\b[\s\S]*?<\/offer>/gi) || []) {
 
 console.log(`Excluded OFFERIDs: ${[...excluded].join(", ")}`);
 console.log(`Removed offer blocks: ${removed}`);
-console.log(`Own-stock Collar: list=${ownManualCodes.size}, removed_from_rozetka_feed=${ownManualRemoved}`);
+console.log(`Own-stock Collar: list=${ownManualCodes.size}, removed_from_rozetka_feed=${ownManualRemoved}, saved_choices_removed=${ownManualRemovedChoices}`);
 console.log(`Collar dropship sync: allowlist=${dropshipCodes.size}, matched=${matched}, available=${available}, unavailable=${unavailable}, quantity_changed=${quantityChanged}, own_skipped=${ownSkipped}, no_article_skipped=${noArticleSkipped}`);
