@@ -2,6 +2,7 @@ import fs from "node:fs";
 import zlib from "node:zlib";
 
 const DROP_CODES_FILE = "collar-dropship-vendorcodes.gz.b64";
+const OWN_MANUAL_CODES_FILE = "own-manual-collar-vendorcodes.txt";
 const OUT_FILE = "_site/prom-collar-feed.xml";
 
 const OWN_COLLAR_OFFERIDS = new Set([
@@ -24,6 +25,15 @@ function readGzipText(path) {
 
 function loadDropshipCodes() {
   return new Set(readGzipText(DROP_CODES_FILE).split(/\r?\n/).map(s => s.trim()).filter(Boolean));
+}
+
+function loadOwnManualCodes() {
+  return new Set(
+    fs.readFileSync(OWN_MANUAL_CODES_FILE, "utf8")
+      .split(/\r?\n/)
+      .map(s => s.trim())
+      .filter(Boolean)
+  );
 }
 
 function getTag(xml, tag) {
@@ -109,6 +119,7 @@ if (!collarUrl) throw new Error("COLLAR_SOURCE_URL is missing");
 
 const [promXml, collarXml] = await Promise.all([fetchText(promUrl, "Prom source"), fetchText(collarUrl, "Collar source")]);
 const dropshipCodes = loadDropshipCodes();
+const ownManualCodes = loadOwnManualCodes();
 const collarStock = parseCollarStock(collarXml);
 
 const openMatch = promXml.match(/<offers\b[^>]*>/i);
@@ -121,14 +132,22 @@ const tail = promXml.slice(closeIndex);
 const offersBlock = promXml.slice(openEnd, closeIndex);
 const offers = offersBlock.match(/<offer\b[\s\S]*?<\/offer>/gi) || [];
 
-let matched = 0, available = 0, unavailable = 0, ownSkipped = 0, ownFixed = 0, noArticle = 0;
+let matched = 0, available = 0, unavailable = 0, ownSkipped = 0, ownFixed = 0, ownManualExcluded = 0, noArticle = 0;
 const outOffers = [];
 
 for (const original of offers) {
   const id = getOfferId(original);
   const code = getArticle(original);
-  let out = original;
 
+  // Власний склад Collar: ці артикули взагалі не передаємо у фід синхронізації.
+  // За налаштування Prom "товарів немає у файлі → залишити без змін" їхні картки
+  // залишаються повністю ручними: ціна, кількість, наявність, тексти та фото не чіпаються.
+  if (code && ownManualCodes.has(code)) {
+    ownManualExcluded += 1;
+    continue;
+  }
+
+  let out = original;
   const fixed = OWN_FIXED_OVERRIDES.get(id);
   if (fixed) {
     out = applyOwnFixedOverride(original, fixed);
@@ -145,15 +164,15 @@ for (const original of offers) {
     if (qty > 0) available += 1; else unavailable += 1;
   }
 
-  // Keep every source offer. Only confirmed Collar dropship stock fields are changed.
+  // Keep every non-excluded source offer. Only confirmed Collar dropship stock fields are changed.
   outOffers.push(out);
 }
 
 if (matched < 3000) throw new Error(`Safety stop: only ${matched} Prom Collar dropship offers matched`);
-if (outOffers.length !== offers.length) throw new Error("Safety stop: source offer count changed");
+if (outOffers.length + ownManualExcluded !== offers.length) throw new Error("Safety stop: source offer count changed unexpectedly");
 if (ownFixed !== OWN_FIXED_OVERRIDES.size) throw new Error(`Safety stop: expected ${OWN_FIXED_OVERRIDES.size} fixed own offers, applied ${ownFixed}`);
 
 fs.mkdirSync("_site", { recursive: true });
 fs.writeFileSync(OUT_FILE, `${head}\n${outOffers.join("\n")}\n${tail}`, "utf8");
-console.log(`Prom corrected feed: source_offers=${offers.length}, output_offers=${outOffers.length}, allowlist=${dropshipCodes.size}, matched=${matched}, available=${available}, unavailable=${unavailable}, own_skipped=${ownSkipped}, own_fixed=${ownFixed}, no_article=${noArticle}`);
+console.log(`Prom corrected feed: source_offers=${offers.length}, output_offers=${outOffers.length}, allowlist=${dropshipCodes.size}, matched=${matched}, available=${available}, unavailable=${unavailable}, own_manual_list=${ownManualCodes.size}, own_manual_excluded=${ownManualExcluded}, own_skipped=${ownSkipped}, own_fixed=${ownFixed}, no_article=${noArticle}`);
 console.log(`Wrote ${OUT_FILE}`);
