@@ -80,7 +80,8 @@ function loadCollarArticles() {
         if (Array.isArray(parsed)) values = parsed;
         else if (parsed && typeof parsed === "object") values = Object.keys(parsed);
       } catch {
-        values = raw.split(/[\r\n,;\t]+/g);
+        values = raw.split(/[\r
+,;\t]+/g);
       }
       for (const value of values) {
         const key = normalizeKey(value);
@@ -99,7 +100,8 @@ function loadOwnManualCollarArticles() {
   const out = new Set();
   const file = "own-manual-collar-vendorcodes.txt";
   if (!existsSync(file)) return out;
-  for (const value of readFileSync(file, "utf8").split(/[\r\n,;\t]+/g)) {
+  for (const value of readFileSync(file, "utf8").split(/[\r
+,;\t]+/g)) {
     const key = normalizeKey(value);
     if (key) out.add(key);
   }
@@ -169,7 +171,8 @@ const stats = {
   invalid_source_price: 0,
   promo_source_detected: 0,
   collar_no_markup: 0,
-  non_collar_marked_up: 0,\n  own_manual_collar_marked_up: 0,
+  non_collar_marked_up: 0,
+  own_manual_collar_marked_up: 0,
   changed_prices: 0,
   discount_tags_removed: 0,
 };
@@ -197,7 +200,8 @@ const correctedXml = finalXml.replace(/<offer\b[\s\S]*?<\/offer>/gi, (finalOffer
   } else {
     const pct = base <= 500 ? 0.07 : base <= 1500 ? 0.05 : 0.03;
     targetPrice = String(Math.round(base * (1 + pct)));
-    stats.non_collar_marked_up++;\n    if (isOwnManualCollar(found.offer)) stats.own_manual_collar_marked_up++;
+    stats.non_collar_marked_up++;
+    if (isOwnManualCollar(found.offer)) stats.own_manual_collar_marked_up++;
   }
 
   let updated = setMainPrice(finalOffer, targetPrice);
@@ -216,5 +220,6 @@ await writeFile(FEED_FILE, correctedXml, "utf8");
 let allStats = {};
 try { allStats = JSON.parse(await readFile(STATS_FILE, "utf8")); } catch {}
 allStats.price_rules = stats;
-await writeFile(STATS_FILE, JSON.stringify(allStats, null, 2) + "\n", "utf8");
+await writeFile(STATS_FILE, JSON.stringify(allStats, null, 2) + "
+", "utf8");
 console.log("Rozetka price rules applied:", JSON.stringify(stats, null, 2));
