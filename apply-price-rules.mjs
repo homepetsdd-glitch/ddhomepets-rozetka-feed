@@ -95,6 +95,23 @@ function loadCollarArticles() {
 
 const COLLAR_ARTICLES = loadCollarArticles();
 
+function loadOwnManualCollarArticles() {
+  const out = new Set();
+  const file = "own-manual-collar-vendorcodes.txt";
+  if (!existsSync(file)) return out;
+  for (const value of readFileSync(file, "utf8").split(/[\r\n,;\t]+/g)) {
+    const key = normalizeKey(value);
+    if (key) out.add(key);
+  }
+  return out;
+}
+const OWN_MANUAL_COLLAR_ARTICLES = loadOwnManualCollarArticles();
+
+function isOwnManualCollar(sourceOffer) {
+  const article = normalizeKey(getTagValue(sourceOffer, "article"));
+  return Boolean(article && OWN_MANUAL_COLLAR_ARTICLES.has(article));
+}
+
 function isCollarFamily(sourceOffer) {
   const vendor = normalizeKey(getTagValue(sourceOffer, "vendor"));
   const name = normalizeKey(getTagValue(sourceOffer, "name_ua") || getTagValue(sourceOffer, "name") || "");
@@ -152,7 +169,7 @@ const stats = {
   invalid_source_price: 0,
   promo_source_detected: 0,
   collar_no_markup: 0,
-  non_collar_marked_up: 0,
+  non_collar_marked_up: 0,\n  own_manual_collar_marked_up: 0,
   changed_prices: 0,
   discount_tags_removed: 0,
 };
@@ -174,13 +191,13 @@ const correctedXml = finalXml.replace(/<offer\b[\s\S]*?<\/offer>/gi, (finalOffer
   if (promoDetected) stats.promo_source_detected++;
 
   let targetPrice;
-  if (isCollarFamily(found.offer)) {
+  if (isCollarFamily(found.offer) && !isOwnManualCollar(found.offer)) {
     targetPrice = String(base);
     stats.collar_no_markup++;
   } else {
     const pct = base <= 500 ? 0.07 : base <= 1500 ? 0.05 : 0.03;
     targetPrice = String(Math.round(base * (1 + pct)));
-    stats.non_collar_marked_up++;
+    stats.non_collar_marked_up++;\n    if (isOwnManualCollar(found.offer)) stats.own_manual_collar_marked_up++;
   }
 
   let updated = setMainPrice(finalOffer, targetPrice);
