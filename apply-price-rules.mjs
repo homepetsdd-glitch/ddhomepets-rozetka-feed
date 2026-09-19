@@ -80,8 +80,7 @@ function loadCollarArticles() {
         if (Array.isArray(parsed)) values = parsed;
         else if (parsed && typeof parsed === "object") values = Object.keys(parsed);
       } catch {
-        values = raw.split(/[\r
-,;\t]+/g);
+        values = raw.split(/[\\r\\n,;\\t]+/g);
       }
       for (const value of values) {
         const key = normalizeKey(value);
@@ -100,8 +99,7 @@ function loadOwnManualCollarArticles() {
   const out = new Set();
   const file = "own-manual-collar-vendorcodes.txt";
   if (!existsSync(file)) return out;
-  for (const value of readFileSync(file, "utf8").split(/[\r
-,;\t]+/g)) {
+  for (const value of readFileSync(file, "utf8").split(/[\\r\\n,;\\t]+/g)) {
     const key = normalizeKey(value);
     if (key) out.add(key);
   }
