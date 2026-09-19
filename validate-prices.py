@@ -81,6 +81,20 @@ def load_collar_articles():
 
 COLLAR_ARTICLES = load_collar_articles()
 
+def load_own_manual_collar_articles():
+    path = "own-manual-collar-vendorcodes.txt"
+    if not os.path.exists(path):
+        return set()
+    import re
+    raw = open(path, "r", encoding="utf-8").read()
+    return {x.strip().lower() for x in re.split(r"[\\r\\n,;\\t]+", raw) if x.strip()}
+
+OWN_MANUAL_COLLAR_ARTICLES = load_own_manual_collar_articles()
+
+def is_own_manual_collar(offer):
+    article = text(offer, "article").strip().lower()
+    return bool(article and article in OWN_MANUAL_COLLAR_ARTICLES)
+
 
 def is_collar_family(offer):
     vendor = text(offer, "vendor").lower()
@@ -205,7 +219,7 @@ for offer in feed_offers:
         markup_checked += 1
 
     if abs(actual - expected) > 0.01:
-        family = "COLLAR/no markup" if is_collar_family(source_offer) else "markup rule"
+        family = "COLLAR/no markup" if (is_collar_family(source_offer) and not is_own_manual_collar(source_offer)) else "markup rule"
         base, _ = regular_source_price(source_offer)
         errors.append(
             f"{oid}: WRONG PRICE — expected {expected:g} from regular Prom price {base:g} by {family}, got {actual:g}"
