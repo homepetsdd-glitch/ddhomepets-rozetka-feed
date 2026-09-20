@@ -213,7 +213,7 @@ for offer in feed_offers:
     checked += 1
     if promo:
         promo_checked += 1
-    if is_collar_family(source_offer):
+    if is_collar_family(source_offer) and not is_own_manual_collar(source_offer):
         collar_checked += 1
     else:
         markup_checked += 1
