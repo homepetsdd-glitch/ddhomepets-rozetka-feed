@@ -115,7 +115,7 @@ def expected_rozetka_price(source_offer):
     base, promo = regular_source_price(source_offer)
     if base is None:
         return None, promo
-    if is_collar_family(source_offer):
+    if is_collar_family(source_offer) and not is_own_manual_collar(source_offer):
         return float(base), promo
     if base <= 500:
         pct = 0.07
