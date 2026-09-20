@@ -87,7 +87,7 @@ def load_own_manual_collar_articles():
         return set()
     import re
     raw = open(path, "r", encoding="utf-8").read()
-    return {x.strip().lower() for x in re.split(r"[\\r\\n,;\\t]+", raw) if x.strip()}
+    return {x.strip().lower() for x in re.split(r"[\r\n,;\t]+", raw) if x.strip()}
 
 OWN_MANUAL_COLLAR_ARTICLES = load_own_manual_collar_articles()
 
