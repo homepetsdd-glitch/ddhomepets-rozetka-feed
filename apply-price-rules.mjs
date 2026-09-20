@@ -218,6 +218,5 @@ await writeFile(FEED_FILE, correctedXml, "utf8");
 let allStats = {};
 try { allStats = JSON.parse(await readFile(STATS_FILE, "utf8")); } catch {}
 allStats.price_rules = stats;
-await writeFile(STATS_FILE, JSON.stringify(allStats, null, 2) + "
-", "utf8");
+await writeFile(STATS_FILE, JSON.stringify(allStats, null, 2) + "\\n", "utf8");
 console.log("Rozetka price rules applied:", JSON.stringify(stats, null, 2));
