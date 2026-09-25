@@ -225,9 +225,11 @@ for offer in feed_offers:
             f"{oid}: WRONG PRICE — expected {expected:g} from regular Prom price {base:g} by {family}, got {actual:g}"
         )
 
-if checked < 3300:
+min_required_checked = max(3000, math.ceil(len(feed_offers) * 0.95))
+if checked < min_required_checked:
     errors.append(
-        f"price validation coverage too low: checked only {checked} matched offers; skipped {skipped_missing}"
+        f"price validation coverage too low: checked {checked} of {len(feed_offers)} feed offers; "
+        f"required at least {min_required_checked}; skipped {skipped_missing}"
     )
 
 if errors:
