@@ -52,7 +52,11 @@ def regular_source_price(offer):
 
 def load_collar_articles():
     out = set()
-    for path in ["collar-current-vendorcodes.gz.b64", "collar-dropship-vendorcodes.gz.b64"]:
+    # The current-vendorcodes snapshot in the repository is a legacy/corrupted
+    # gzip artifact. Dropship codes are the authoritative Collar mapping needed
+    # for price validation; vendor/name detection below still catches other
+    # Collar-family offers without depending on that snapshot.
+    for path in ["collar-dropship-vendorcodes.gz.b64"]:
         if not os.path.exists(path):
             continue
         try:
