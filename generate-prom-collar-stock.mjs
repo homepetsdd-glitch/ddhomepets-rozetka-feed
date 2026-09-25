@@ -148,7 +148,9 @@ for (const original of offers) {
     noArticle += 1;
   } else if (dropshipCodes.has(code)) {
     matched += 1;
-    const qty = Number(collarStock.get(code) || 0);
+    const supplierQty = Number(collarStock.get(code) || 0);
+    // Same rule as Rozetka: Collar dropship supplier qty 0–4 is treated as unavailable.
+    const qty = supplierQty <= 4 ? 0 : supplierQty;
     out = setStockQuantity(setAvailable(original, qty > 0), qty);
     if (qty > 0) available += 1; else unavailable += 1;
   }
