@@ -122,11 +122,11 @@ def expected_rozetka_price(source_offer):
     if is_collar_family(source_offer) and not is_own_manual_collar(source_offer):
         return float(base), promo
     if base <= 500:
-        pct = 0.07
-    elif base <= 1500:
-        pct = 0.05
+        pct = 0.15
+    elif base < 1000:
+        pct = 0.10
     else:
-        pct = 0.03
+        pct = 0.05
     return float(js_round_positive(base * (1 + pct))), promo
 
 
@@ -249,7 +249,7 @@ print(
     f"{checked} offers checked; "
     f"{promo_checked} source promo offers verified from regular pre-discount price; "
     f"{collar_checked} COLLAR-family prices confirmed without markup; "
-    f"{markup_checked} non-COLLAR prices confirmed by 7%/5%/3% rules; "
+    f"{markup_checked} non-COLLAR prices confirmed by 15%/10%/5% rules; "
     f"matches id/url/article={matched_by_id}/{matched_by_url}/{matched_by_article}; "
     f"{skipped_missing} source-missing offers skipped."
 )
