@@ -69,7 +69,7 @@ function getRegularPrice(sourceOffer) {
 
 function loadCollarArticles() {
   const out = new Set();
-  for (const file of ["collar-current-vendorcodes.gz.b64", "collar-dropship-vendorcodes.gz.b64"]) {
+  for (const file of ["collar-dropship-vendorcodes.gz.b64"]) {
     if (!existsSync(file)) continue;
     try {
       const packed = readFileSync(file, "utf8").trim();
@@ -196,7 +196,7 @@ const correctedXml = finalXml.replace(/<offer\b[\s\S]*?<\/offer>/gi, (finalOffer
     targetPrice = String(base);
     stats.collar_no_markup++;
   } else {
-    const pct = base <= 500 ? 0.07 : base <= 1500 ? 0.05 : 0.03;
+    const pct = base <= 500 ? 0.15 : base < 1000 ? 0.10 : 0.05;
     targetPrice = String(Math.round(base * (1 + pct)));
     stats.non_collar_marked_up++;
     if (isOwnManualCollar(found.offer)) stats.own_manual_collar_marked_up++;
