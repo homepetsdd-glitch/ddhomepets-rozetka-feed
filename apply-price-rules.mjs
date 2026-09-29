@@ -107,9 +107,23 @@ function loadOwnManualCollarArticles() {
 }
 const OWN_MANUAL_COLLAR_ARTICLES = loadOwnManualCollarArticles();
 
-function isOwnManualCollar(sourceOffer) {
+function loadOwnManualCollarOfferIds() {
+  const out = new Set();
+  const file = "own-manual-collar-offerids.txt";
+  if (!existsSync(file)) return out;
+  for (const value of readFileSync(file, "utf8").split(/[\r\n,;\t]+/g)) {
+    const key = String(value || "").trim();
+    if (key) out.add(key);
+  }
+  return out;
+}
+const OWN_MANUAL_COLLAR_OFFER_IDS = loadOwnManualCollarOfferIds();
+
+function isOwnManualCollar(sourceOffer, finalOffer = null) {
   const article = normalizeKey(getTagValue(sourceOffer, "article"));
-  return Boolean(article && OWN_MANUAL_COLLAR_ARTICLES.has(article));
+  if (article && OWN_MANUAL_COLLAR_ARTICLES.has(article)) return true;
+  const finalId = finalOffer ? getOfferId(finalOffer) : "";
+  return Boolean(finalId && OWN_MANUAL_COLLAR_OFFER_IDS.has(finalId));
 }
 
 function isCollarFamily(sourceOffer) {
@@ -192,14 +206,14 @@ const correctedXml = finalXml.replace(/<offer\b[\s\S]*?<\/offer>/gi, (finalOffer
   if (promoDetected) stats.promo_source_detected++;
 
   let targetPrice;
-  if (isCollarFamily(found.offer) && !isOwnManualCollar(found.offer)) {
+  if (isCollarFamily(found.offer) && !isOwnManualCollar(found.offer, finalOffer)) {
     targetPrice = String(base);
     stats.collar_no_markup++;
   } else {
     const pct = base <= 500 ? 0.15 : base < 1000 ? 0.10 : 0.05;
     targetPrice = String(Math.round(base * (1 + pct)));
     stats.non_collar_marked_up++;
-    if (isOwnManualCollar(found.offer)) stats.own_manual_collar_marked_up++;
+    if (isOwnManualCollar(found.offer, finalOffer)) stats.own_manual_collar_marked_up++;
   }
 
   let updated = setMainPrice(finalOffer, targetPrice);
