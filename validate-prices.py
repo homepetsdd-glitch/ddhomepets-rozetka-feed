@@ -95,9 +95,22 @@ def load_own_manual_collar_articles():
 
 OWN_MANUAL_COLLAR_ARTICLES = load_own_manual_collar_articles()
 
-def is_own_manual_collar(offer):
+def load_own_manual_collar_offerids():
+    path = "own-manual-collar-offerids.txt"
+    if not os.path.exists(path):
+        return set()
+    import re
+    raw = open(path, "r", encoding="utf-8").read()
+    return {x.strip() for x in re.split(r"[\r\n,;\t]+", raw) if x.strip()}
+
+OWN_MANUAL_COLLAR_OFFER_IDS = load_own_manual_collar_offerids()
+
+def is_own_manual_collar(offer, final_offer=None):
     article = text(offer, "article").strip().lower()
-    return bool(article and article in OWN_MANUAL_COLLAR_ARTICLES)
+    if article and article in OWN_MANUAL_COLLAR_ARTICLES:
+        return True
+    final_id = str(final_offer.get("id") or "").strip() if final_offer is not None else ""
+    return bool(final_id and final_id in OWN_MANUAL_COLLAR_OFFER_IDS)
 
 
 def is_collar_family(offer):
@@ -115,11 +128,11 @@ def js_round_positive(x):
     return math.floor(x + 0.5)
 
 
-def expected_rozetka_price(source_offer):
+def expected_rozetka_price(source_offer, final_offer=None):
     base, promo = regular_source_price(source_offer)
     if base is None:
         return None, promo
-    if is_collar_family(source_offer) and not is_own_manual_collar(source_offer):
+    if is_collar_family(source_offer) and not is_own_manual_collar(source_offer, final_offer):
         return float(base), promo
     if base <= 500:
         pct = 0.15
@@ -209,7 +222,7 @@ for offer in feed_offers:
         skipped_missing += 1
         continue
 
-    expected, promo = expected_rozetka_price(source_offer)
+    expected, promo = expected_rozetka_price(source_offer, offer)
     if expected is None:
         errors.append(f"{oid}: source regular price is invalid")
         continue
@@ -217,13 +230,13 @@ for offer in feed_offers:
     checked += 1
     if promo:
         promo_checked += 1
-    if is_collar_family(source_offer) and not is_own_manual_collar(source_offer):
+    if is_collar_family(source_offer) and not is_own_manual_collar(source_offer, offer):
         collar_checked += 1
     else:
         markup_checked += 1
 
     if abs(actual - expected) > 0.01:
-        family = "COLLAR/no markup" if (is_collar_family(source_offer) and not is_own_manual_collar(source_offer)) else "markup rule"
+        family = "COLLAR/no markup" if (is_collar_family(source_offer) and not is_own_manual_collar(source_offer, offer)) else "markup rule"
         base, _ = regular_source_price(source_offer)
         errors.append(
             f"{oid}: WRONG PRICE — expected {expected:g} from regular Prom price {base:g} by {family}, got {actual:g}"
