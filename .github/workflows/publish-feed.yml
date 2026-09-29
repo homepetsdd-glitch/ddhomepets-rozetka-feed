@@ -15,6 +15,7 @@ on:
       - "collar-current-vendorcodes.gz.b64"
       - "collar-current-stock.json.gz.b64"
       - "own-manual-collar-vendorcodes.txt"
+      - "own-manual-collar-offerids.txt"
       - "apply-audit-photo-removals.mjs"
       - "excluded-offerids.txt"
       - "apply-offer-exclusions.mjs"
