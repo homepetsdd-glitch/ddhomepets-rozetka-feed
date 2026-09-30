@@ -1776,6 +1776,25 @@ const collarPhotoGallery = buildCollarPhotoGallery(collarPhotoReport);  // Мі�
   await mkdir("_site", { recursive: true });
   await writeFile("_site/feed.xml", xml, "utf8");
   await writeFile("_site/collar-photo-refresh.xml", collarPhotoRefresh.xml, "utf8");
+  const collarPhotoTestIds = new Set(["3139689685", "3139689689", "3139689692"]);
+  const testStart = collarPhotoRefresh.xml.indexOf("<offers>");
+  const testEnd = collarPhotoRefresh.xml.indexOf("</offers>");
+  const testHead = collarPhotoRefresh.xml.slice(0, testStart + "<offers>".length);
+  const testOffersXml = collarPhotoRefresh.xml.slice(testStart + "<offers>".length, testEnd);
+  const testTail = collarPhotoRefresh.xml.slice(testEnd);
+  const testOffers = [];
+  const testOfferRegex = /<offer\\b[\\s\\S]*?<\\/offer>/gi;
+  let testMatch;
+  while ((testMatch = testOfferRegex.exec(testOffersXml)) !== null) {
+    const testOffer = testMatch[0];
+    const testId = getOfferId(testOffer);
+    if (testId && collarPhotoTestIds.has(String(testId))) testOffers.push(testOffer);
+  }
+  if (testOffers.length !== collarPhotoTestIds.size) {
+    throw new Error(`Safety stop: Collar test feed has ${testOffers.length} of ${collarPhotoTestIds.size} expected offers`);
+  }
+  const collarPhotoTestXml = testHead + "\n" + testOffers.join("\n") + "\n" + testTail;
+  await writeFile("_site/collar-photo-refresh-test.xml", collarPhotoTestXml, "utf8");
   await writeFile("_site/collar-photo-refresh-stats.json", JSON.stringify(collarPhotoRefresh.stats, null, 2) + "\n", "utf8");
   await writeFile("_site/stats.json", JSON.stringify(stats, null, 2) + "\n", "utf8");
 await writeFile(
