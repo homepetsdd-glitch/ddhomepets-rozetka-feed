@@ -26,7 +26,7 @@ on:
       - "validate-collar-photo-choices.py"
       - "validate-prices.py"
       - "validate-photo-duplicates.py"
-      - ".github/workflows/publish-feed.yml"
+      - "generate-feed.mjs"\n      - ".github/workflows/publish-feed.yml"
   schedule:
     - cron: "7 * * * *"
 
