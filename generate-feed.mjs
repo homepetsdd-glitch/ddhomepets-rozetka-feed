@@ -1783,7 +1783,7 @@ const collarPhotoGallery = buildCollarPhotoGallery(collarPhotoReport);  // Мі�
   const testOffersXml = collarPhotoRefresh.xml.slice(testStart + "<offers>".length, testEnd);
   const testTail = collarPhotoRefresh.xml.slice(testEnd);
   const testOffers = [];
-  const testOfferRegex = /<offer\\b[\\s\\S]*?<\\/offer>/gi;
+  const testOfferRegex = /<offer\b[\s\S]*?<\/offer>/gi;
   let testMatch;
   while ((testMatch = testOfferRegex.exec(testOffersXml)) !== null) {
     const testOffer = testMatch[0];
