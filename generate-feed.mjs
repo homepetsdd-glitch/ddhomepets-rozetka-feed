@@ -1740,7 +1740,7 @@ async function buildCollarPhotoRefreshFeed(fullFeedXml) {
   const offersXml = fullFeedXml.slice(offersStart + "<offers>".length, offersEnd);
   const tail = fullFeedXml.slice(offersEnd);
   const kept = [];
-  const offerRegex = /<offer\\b[\\s\\S]*?<\\/offer>/gi;
+  const offerRegex = /<offer\b[\s\S]*?<\/offer>/gi;
   let match;
 
   while ((match = offerRegex.exec(offersXml)) !== null) {
