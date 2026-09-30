@@ -1776,7 +1776,7 @@ const collarPhotoGallery = buildCollarPhotoGallery(collarPhotoReport);  // Мі�
   await mkdir("_site", { recursive: true });
   await writeFile("_site/feed.xml", xml, "utf8");
   await writeFile("_site/collar-photo-refresh.xml", collarPhotoRefresh.xml, "utf8");
-  const collarPhotoTestIds = new Set(["3139689685", "3139689689", "3139689692"]);
+  const collarPhotoTestIds = new Set(["3139689685", "3139689692", "3139689697"]);
   const testStart = collarPhotoRefresh.xml.indexOf("<offers>");
   const testEnd = collarPhotoRefresh.xml.indexOf("</offers>");
   const testHead = collarPhotoRefresh.xml.slice(0, testStart + "<offers>".length);
