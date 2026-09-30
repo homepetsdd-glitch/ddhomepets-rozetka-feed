@@ -21,6 +21,8 @@ on:
       - "apply-offer-exclusions.mjs"
       - "generate-prom-collar-stock.mjs"
       - "apply-price-rules.mjs"
+      - "pricecreator-photo-overrides.json"
+      - "apply-pricecreator-photo-overrides.mjs"
       - "validate-collar-photo-choices.py"
       - "validate-prices.py"
       - "validate-photo-duplicates.py"
@@ -83,6 +85,8 @@ jobs:
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
         run: node apply-price-rules.mjs
+      - name: Apply Pricecreator photo overrides
+        run: node apply-pricecreator-photo-overrides.mjs
       - name: Guard saved Collar photo order
         run: python3 validate-collar-photo-choices.py
       - name: Guard Rozetka prices
