@@ -1717,10 +1717,53 @@ if (savedEndPhoto) {
 </script>
 </body>
 </html>`;
-}// GitHub Actions CLI entry point: формує статичний feed.xml без Cloudflare CPU-ліміту.
+}
+async function buildCollarPhotoRefreshFeed(fullFeedXml) {
+  const collarPhotoChoices = await loadCollarPhotoChoices();
+  const targetIds = new Set(
+    Object.entries(collarPhotoChoices)
+      .filter(([id, choice]) =>
+        String(id) !== "3057501936" &&
+        choice &&
+        Number(choice.main_photo || 0) > 0
+      )
+      .map(([id]) => String(id))
+  );
+
+  const offersStart = fullFeedXml.indexOf("<offers>");
+  const offersEnd = fullFeedXml.indexOf("</offers>");
+  if (offersStart < 0 || offersEnd < 0 || offersEnd <= offersStart) {
+    throw new Error("Full feed has no <offers> block");
+  }
+
+  const head = fullFeedXml.slice(0, offersStart + "<offers>".length);
+  const offersXml = fullFeedXml.slice(offersStart + "<offers>".length, offersEnd);
+  const tail = fullFeedXml.slice(offersEnd);
+  const kept = [];
+  const offerRegex = /<offer\\b[\\s\\S]*?<\\/offer>/gi;
+  let match;
+
+  while ((match = offerRegex.exec(offersXml)) !== null) {
+    const offer = match[0];
+    const id = getOfferId(offer);
+    if (id && targetIds.has(String(id))) kept.push(offer);
+  }
+
+  return {
+    xml: head + "\n" + kept.join("\n") + "\n" + tail,
+    stats: {
+      selected_choices: targetIds.size,
+      generated_offers: kept.length,
+      excluded_offer_3057501936: true
+    }
+  };
+}
+
+// GitHub Actions CLI entry point: формує статичний feed.xml без Cloudflare CPU-ліміту.
 async function main() {
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { xml, stats } = await buildFeed();
+const collarPhotoRefresh = await buildCollarPhotoRefreshFeed(xml);
 const collarPhotoReport = await buildCollarPhotoReport();
 const collarPhotoGallery = buildCollarPhotoGallery(collarPhotoReport);  // Мінімальні запобіжники перед публікацією.
   if (!xml.includes("<offers>") || !xml.includes("</offers>")) {
@@ -1732,6 +1775,8 @@ const collarPhotoGallery = buildCollarPhotoGallery(collarPhotoReport);  // Мі�
 
   await mkdir("_site", { recursive: true });
   await writeFile("_site/feed.xml", xml, "utf8");
+  await writeFile("_site/collar-photo-refresh.xml", collarPhotoRefresh.xml, "utf8");
+  await writeFile("_site/collar-photo-refresh-stats.json", JSON.stringify(collarPhotoRefresh.stats, null, 2) + "\n", "utf8");
   await writeFile("_site/stats.json", JSON.stringify(stats, null, 2) + "\n", "utf8");
 await writeFile(
   "_site/collar-photo-report.json",
