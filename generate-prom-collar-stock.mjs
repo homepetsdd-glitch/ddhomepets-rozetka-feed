@@ -3,6 +3,7 @@ import zlib from "node:zlib";
 
 const DROP_CODES_FILE = "collar-dropship-vendorcodes.gz.b64";
 const OWN_MANUAL_CODES_FILE = "own-manual-collar-vendorcodes.txt";
+const IMPORT_ID_MAP_FILE = "prom-collar-import-id-map.tsv";
 const OUT_FILE = "_site/prom-collar-feed.xml";
 
 const OWN_COLLAR_OFFERIDS = new Set([
@@ -30,6 +31,19 @@ function loadOwnManualCodes() {
   );
 }
 
+function loadImportIdMap() {
+  const out = new Map();
+  for (const line of fs.readFileSync(IMPORT_ID_MAP_FILE, "utf8").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const parts = line.split("\t");
+    const code = String(parts[0] || "").trim();
+    const importId = String(parts[1] || "").trim();
+    if (code && importId) out.set(code, importId);
+  }
+  if (out.size < 3300) throw new Error("Safety stop: stable Prom import-ID map has only " + out.size + " entries");
+  return out;
+}
+
 function getTag(xml, tag) {
   const m = xml.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
   if (!m) return "";
@@ -44,6 +58,14 @@ function getOfferId(offer) {
 function getArticle(offer) {
   return getTag(offer, "vendorCode") || getTag(offer, "article") || getTag(offer, "code");
 }
+
+function setOfferId(offer, importId) {
+  return offer.replace(
+    /<offer\b([^>]*?)\bid=(["'])\s*[^"']+\2/i,
+    (full, before, q) => "<offer" + before + "id=" + q + String(importId) + q
+  );
+}
+
 
 function setAvailable(offer, value) {
   const flag = value ? "true" : "false";
@@ -118,88 +140,95 @@ async function fetchText(url, label) {
   return await response.text();
 }
 
-const promUrl = String(process.env.PROM_SOURCE_URL || "").trim();
 const collarUrl = String(process.env.COLLAR_SOURCE_URL || "").trim();
-if (!promUrl) throw new Error("PROM_SOURCE_URL is missing");
 if (!collarUrl) throw new Error("COLLAR_SOURCE_URL is missing");
 
-const [promXml, collarXml] = await Promise.all([fetchText(promUrl, "Prom source"), fetchText(collarUrl, "Collar source")]);
+const collarXml = await fetchText(collarUrl, "Collar source");
 const dropshipCodes = loadDropshipCodes();
 const ownManualCodes = loadOwnManualCodes();
+const importIds = loadImportIdMap();
 const collarCatalog = parseCollarCatalog(collarXml);
 
-const openMatch = promXml.match(/<offers\b[^>]*>/i);
-const closeIndex = promXml.search(/<\/offers>/i);
-if (!openMatch || closeIndex < 0 || openMatch.index == null) throw new Error("Prom source has no <offers> block");
+const openMatch = collarXml.match(/<offers\b[^>]*>/i);
+const closeIndex = collarXml.search(/<\/offers>/i);
+if (!openMatch || closeIndex < 0 || openMatch.index == null) throw new Error("Collar source has no <offers> block");
 
 const openEnd = openMatch.index + openMatch[0].length;
-const head = promXml.slice(0, openEnd);
-const tail = promXml.slice(closeIndex);
-const offersBlock = promXml.slice(openEnd, closeIndex);
+const head = collarXml.slice(0, openEnd);
+const tail = collarXml.slice(closeIndex);
+const offersBlock = collarXml.slice(openEnd, closeIndex);
 const offers = offersBlock.match(/<offer\b[\s\S]*?<\/offer>/gi) || [];
+if (offers.length < 4000) throw new Error("Safety stop: Collar source has only " + offers.length + " offers");
 
-let matched = 0, available = 0, unavailable = 0, ownSkipped = 0, ownManualExcluded = 0, noArticle = 0;
-let priceMatched = 0, priceChanged = 0, priceMissing = 0, priceMissingAvailable = 0, extremePriceChanges = 0;
+let matched = 0;
+let available = 0;
+let unavailable = 0;
+let ownManualExcluded = 0;
+let notDropshipSkipped = 0;
+let unmappedSkipped = 0;
+let invalidPriceSkipped = 0;
 const outOffers = [];
 
 for (const original of offers) {
-  const id = getOfferId(original);
-  const code = getArticle(original);
+  const code = getTag(original, "vendorCode");
+  if (!code) continue;
 
-  // Власний склад Collar: ці артикули взагалі не передаємо у фід синхронізації.
-  // За налаштування Prom "товарів немає у файлі → залишити без змін" їхні картки
-  // залишаються повністю ручними: ціна, кількість, наявність, тексти та фото не чіпаються.
-  if (code && ownManualCodes.has(code)) {
+  // One shared protection list for both Rozetka and Prom.
+  if (ownManualCodes.has(code)) {
     ownManualExcluded += 1;
     continue;
   }
 
-  let out = original;
-  if (OWN_COLLAR_OFFERIDS.has(id)) {
-    ownSkipped += 1;
-  } else if (!code) {
-    noArticle += 1;
-  } else if (dropshipCodes.has(code)) {
-    matched += 1;
-    const supplier = collarCatalog.get(code) || { qty: 0, price: null };
-    const supplierQty = Number(supplier.qty || 0);
-
-    // Same rule as Rozetka: Collar dropship supplier qty 0–4 is treated as unavailable.
-    const qty = supplierQty <= 4 ? 0 : supplierQty;
-    out = setStockQuantity(setAvailable(original, qty > 0), qty);
-
-    // Dropship price follows the current Collar selling price.
-    // Own/manual Collar articles never reach this branch because they are excluded above.
-    if (supplier.price !== null) {
-      priceMatched += 1;
-      const oldPrice = parseNumber(getTag(original, "price"));
-      if (oldPrice !== null && oldPrice > 0) {
-        const ratio = supplier.price / oldPrice;
-        if (ratio < 0.25 || ratio > 4) extremePriceChanges += 1;
-        if (Math.abs(oldPrice - supplier.price) > 0.0001) priceChanged += 1;
-      }
-      out = setPrice(out, supplier.price);
-    } else {
-      priceMissing += 1;
-      // Missing price is acceptable for products absent/unavailable in the live supplier feed:
-      // keep the existing Prom price while marking them unavailable.
-      if (qty > 0) priceMissingAvailable += 1;
-    }
-
-    if (qty > 0) available += 1; else unavailable += 1;
+  // Only confirmed Collar dropship positions belong in this Prom updater.
+  if (!dropshipCodes.has(code)) {
+    notDropshipSkipped += 1;
+    continue;
   }
 
-  // Keep every non-excluded source offer. Only confirmed Collar dropship stock fields are changed.
+  // Critical: Prom updates by the stable import ID used by the old Worker,
+  // not by the current public product-page ID.
+  const importId = importIds.get(code);
+  if (!importId) {
+    // SAFE MODE: never create a new product automatically.
+    unmappedSkipped += 1;
+    continue;
+  }
+
+  const supplier = collarCatalog.get(code);
+  if (!supplier || supplier.price === null) {
+    invalidPriceSkipped += 1;
+    continue;
+  }
+
+  const supplierQty = Math.max(0, Math.floor(Number(supplier.qty) || 0));
+  const qty = supplierQty <= 4 ? 0 : supplierQty;
+
+  let out = setOfferId(original, importId);
+  out = setStockQuantity(setAvailable(out, qty > 0), qty);
+  out = setPrice(out, supplier.price);
   outOffers.push(out);
+
+  matched += 1;
+  if (qty > 0) available += 1;
+  else unavailable += 1;
 }
 
-if (matched < 2300) throw new Error(`Safety stop: only ${matched} Prom Collar dropship offers matched`);
-if (priceMatched < 2300) throw new Error(`Safety stop: only ${priceMatched} Prom Collar dropship prices matched`);
-if (priceMissingAvailable > 20) throw new Error(`Safety stop: ${priceMissingAvailable} available Collar dropship offers have no supplier price`);
-if (extremePriceChanges > 20) throw new Error(`Safety stop: ${extremePriceChanges} Collar price changes are outside 0.25x–4x of current Prom price`);
-if (outOffers.length + ownManualExcluded !== offers.length) throw new Error("Safety stop: source offer count changed unexpectedly");
+if (matched < 2300) throw new Error("Safety stop: only " + matched + " existing Prom Collar products matched stable import IDs");
+if (invalidPriceSkipped > 20) throw new Error("Safety stop: " + invalidPriceSkipped + " mapped Collar products have invalid prices");
 
 fs.mkdirSync("_site", { recursive: true });
-fs.writeFileSync(OUT_FILE, `${head}\n${outOffers.join("\n")}\n${tail}`, "utf8");
-console.log(`Prom corrected feed: source_offers=${offers.length}, output_offers=${outOffers.length}, allowlist=${dropshipCodes.size}, matched=${matched}, available=${available}, unavailable=${unavailable}, price_matched=${priceMatched}, price_changed=${priceChanged}, price_missing=${priceMissing}, price_missing_available=${priceMissingAvailable}, extreme_price_changes=${extremePriceChanges}, own_manual_list=${ownManualCodes.size}, own_manual_excluded=${ownManualExcluded}, own_skipped=${ownSkipped}, no_article=${noArticle}`);
-console.log(`Wrote ${OUT_FILE}`);
+fs.writeFileSync(OUT_FILE, head + "\n" + outOffers.join("\n") + "\n" + tail, "utf8");
+
+console.log(
+  "Prom safe existing-only feed: upstream=" + offers.length +
+  ", output=" + outOffers.length +
+  ", stable_id_map=" + importIds.size +
+  ", dropship_allowlist=" + dropshipCodes.size +
+  ", available=" + available +
+  ", unavailable=" + unavailable +
+  ", own_manual_excluded=" + ownManualExcluded +
+  ", unmapped_skipped=" + unmappedSkipped +
+  ", non_dropship_skipped=" + notDropshipSkipped +
+  ", invalid_price_skipped=" + invalidPriceSkipped
+);
+console.log("Wrote " + OUT_FILE);
