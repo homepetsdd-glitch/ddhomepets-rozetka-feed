@@ -87,17 +87,29 @@ function applyOwnFixedOverride(offer, override) {
   return out;
 }
 
-function parseCollarStock(xml) {
-  const stock = new Map();
+function parseNumber(value) {
+  const n = Number(String(value || "").replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseCollarCatalog(xml) {
+  const catalog = new Map();
   for (const offer of xml.match(/<offer\b[\s\S]*?<\/offer>/gi) || []) {
     const code = getTag(offer, "vendorCode");
     if (!code) continue;
-    const raw = getTag(offer, "quantity_in_stock") || getTag(offer, "quantity");
-    const qty = Number(String(raw).replace(/\s/g, "").replace(",", "."));
-    if (Number.isFinite(qty) && qty > 0) stock.set(code, qty);
+
+    const rawQty = getTag(offer, "quantity_in_stock") || getTag(offer, "quantity");
+    const parsedQty = parseNumber(rawQty);
+    const qty = parsedQty !== null && parsedQty > 0 ? parsedQty : 0;
+
+    // Collar YML uses <price> as the current selling price.
+    const parsedPrice = parseNumber(getTag(offer, "price"));
+    const price = parsedPrice !== null && parsedPrice > 0 ? parsedPrice : null;
+
+    catalog.set(code, { qty, price });
   }
-  if (stock.size < 3000) throw new Error(`Safety stop: Collar source returned only ${stock.size} stocked articles`);
-  return stock;
+  if (catalog.size < 3000) throw new Error(`Safety stop: Collar source returned only ${catalog.size} articles`);
+  return catalog;
 }
 
 async function fetchText(url, label) {
@@ -114,7 +126,7 @@ if (!collarUrl) throw new Error("COLLAR_SOURCE_URL is missing");
 const [promXml, collarXml] = await Promise.all([fetchText(promUrl, "Prom source"), fetchText(collarUrl, "Collar source")]);
 const dropshipCodes = loadDropshipCodes();
 const ownManualCodes = loadOwnManualCodes();
-const collarStock = parseCollarStock(collarXml);
+const collarCatalog = parseCollarCatalog(collarXml);
 
 const openMatch = promXml.match(/<offers\b[^>]*>/i);
 const closeIndex = promXml.search(/<\/offers>/i);
@@ -127,6 +139,7 @@ const offersBlock = promXml.slice(openEnd, closeIndex);
 const offers = offersBlock.match(/<offer\b[\s\S]*?<\/offer>/gi) || [];
 
 let matched = 0, available = 0, unavailable = 0, ownSkipped = 0, ownManualExcluded = 0, noArticle = 0;
+let priceMatched = 0, priceChanged = 0, priceMissing = 0, extremePriceChanges = 0;
 const outOffers = [];
 
 for (const original of offers) {
@@ -148,10 +161,28 @@ for (const original of offers) {
     noArticle += 1;
   } else if (dropshipCodes.has(code)) {
     matched += 1;
-    const supplierQty = Number(collarStock.get(code) || 0);
+    const supplier = collarCatalog.get(code) || { qty: 0, price: null };
+    const supplierQty = Number(supplier.qty || 0);
+
     // Same rule as Rozetka: Collar dropship supplier qty 0–4 is treated as unavailable.
     const qty = supplierQty <= 4 ? 0 : supplierQty;
     out = setStockQuantity(setAvailable(original, qty > 0), qty);
+
+    // Dropship price follows the current Collar selling price.
+    // Own/manual Collar articles never reach this branch because they are excluded above.
+    if (supplier.price !== null) {
+      priceMatched += 1;
+      const oldPrice = parseNumber(getTag(original, "price"));
+      if (oldPrice !== null && oldPrice > 0) {
+        const ratio = supplier.price / oldPrice;
+        if (ratio < 0.25 || ratio > 4) extremePriceChanges += 1;
+        if (Math.abs(oldPrice - supplier.price) > 0.0001) priceChanged += 1;
+      }
+      out = setPrice(out, supplier.price);
+    } else {
+      priceMissing += 1;
+    }
+
     if (qty > 0) available += 1; else unavailable += 1;
   }
 
@@ -160,9 +191,12 @@ for (const original of offers) {
 }
 
 if (matched < 2300) throw new Error(`Safety stop: only ${matched} Prom Collar dropship offers matched`);
+if (priceMatched < 2300) throw new Error(`Safety stop: only ${priceMatched} Prom Collar dropship prices matched`);
+if (priceMissing > 100) throw new Error(`Safety stop: ${priceMissing} matched Collar dropship offers have no supplier price`);
+if (extremePriceChanges > 20) throw new Error(`Safety stop: ${extremePriceChanges} Collar price changes are outside 0.25x–4x of current Prom price`);
 if (outOffers.length + ownManualExcluded !== offers.length) throw new Error("Safety stop: source offer count changed unexpectedly");
 
 fs.mkdirSync("_site", { recursive: true });
 fs.writeFileSync(OUT_FILE, `${head}\n${outOffers.join("\n")}\n${tail}`, "utf8");
-console.log(`Prom corrected feed: source_offers=${offers.length}, output_offers=${outOffers.length}, allowlist=${dropshipCodes.size}, matched=${matched}, available=${available}, unavailable=${unavailable}, own_manual_list=${ownManualCodes.size}, own_manual_excluded=${ownManualExcluded}, own_skipped=${ownSkipped}, no_article=${noArticle}`);
+console.log(`Prom corrected feed: source_offers=${offers.length}, output_offers=${outOffers.length}, allowlist=${dropshipCodes.size}, matched=${matched}, available=${available}, unavailable=${unavailable}, price_matched=${priceMatched}, price_changed=${priceChanged}, price_missing=${priceMissing}, extreme_price_changes=${extremePriceChanges}, own_manual_list=${ownManualCodes.size}, own_manual_excluded=${ownManualExcluded}, own_skipped=${ownSkipped}, no_article=${noArticle}`);
 console.log(`Wrote ${OUT_FILE}`);
