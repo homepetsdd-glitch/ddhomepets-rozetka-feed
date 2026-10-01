@@ -139,7 +139,7 @@ const offersBlock = promXml.slice(openEnd, closeIndex);
 const offers = offersBlock.match(/<offer\b[\s\S]*?<\/offer>/gi) || [];
 
 let matched = 0, available = 0, unavailable = 0, ownSkipped = 0, ownManualExcluded = 0, noArticle = 0;
-let priceMatched = 0, priceChanged = 0, priceMissing = 0, extremePriceChanges = 0;
+let priceMatched = 0, priceChanged = 0, priceMissing = 0, priceMissingAvailable = 0, extremePriceChanges = 0;
 const outOffers = [];
 
 for (const original of offers) {
@@ -181,6 +181,9 @@ for (const original of offers) {
       out = setPrice(out, supplier.price);
     } else {
       priceMissing += 1;
+      // Missing price is acceptable for products absent/unavailable in the live supplier feed:
+      // keep the existing Prom price while marking them unavailable.
+      if (qty > 0) priceMissingAvailable += 1;
     }
 
     if (qty > 0) available += 1; else unavailable += 1;
@@ -192,11 +195,11 @@ for (const original of offers) {
 
 if (matched < 2300) throw new Error(`Safety stop: only ${matched} Prom Collar dropship offers matched`);
 if (priceMatched < 2300) throw new Error(`Safety stop: only ${priceMatched} Prom Collar dropship prices matched`);
-if (priceMissing > 100) throw new Error(`Safety stop: ${priceMissing} matched Collar dropship offers have no supplier price`);
+if (priceMissingAvailable > 20) throw new Error(`Safety stop: ${priceMissingAvailable} available Collar dropship offers have no supplier price`);
 if (extremePriceChanges > 20) throw new Error(`Safety stop: ${extremePriceChanges} Collar price changes are outside 0.25x–4x of current Prom price`);
 if (outOffers.length + ownManualExcluded !== offers.length) throw new Error("Safety stop: source offer count changed unexpectedly");
 
 fs.mkdirSync("_site", { recursive: true });
 fs.writeFileSync(OUT_FILE, `${head}\n${outOffers.join("\n")}\n${tail}`, "utf8");
-console.log(`Prom corrected feed: source_offers=${offers.length}, output_offers=${outOffers.length}, allowlist=${dropshipCodes.size}, matched=${matched}, available=${available}, unavailable=${unavailable}, price_matched=${priceMatched}, price_changed=${priceChanged}, price_missing=${priceMissing}, extreme_price_changes=${extremePriceChanges}, own_manual_list=${ownManualCodes.size}, own_manual_excluded=${ownManualExcluded}, own_skipped=${ownSkipped}, no_article=${noArticle}`);
+console.log(`Prom corrected feed: source_offers=${offers.length}, output_offers=${outOffers.length}, allowlist=${dropshipCodes.size}, matched=${matched}, available=${available}, unavailable=${unavailable}, price_matched=${priceMatched}, price_changed=${priceChanged}, price_missing=${priceMissing}, price_missing_available=${priceMissingAvailable}, extreme_price_changes=${extremePriceChanges}, own_manual_list=${ownManualCodes.size}, own_manual_excluded=${ownManualExcluded}, own_skipped=${ownSkipped}, no_article=${noArticle}`);
 console.log(`Wrote ${OUT_FILE}`);
