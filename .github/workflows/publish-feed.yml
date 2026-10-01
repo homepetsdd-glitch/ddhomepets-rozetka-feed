@@ -82,6 +82,12 @@ jobs:
         env:
           COLLAR_SOURCE_URL: ${{ secrets.COLLAR_SOURCE_URL }}
         run: node apply-offer-exclusions.mjs
+      - name: Generate Prom Collar stock feed
+        env:
+          PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
+          COLLAR_SOURCE_URL: ${{ secrets.COLLAR_SOURCE_URL }}
+        run: node generate-prom-collar-stock.mjs
+
       - name: Apply final Rozetka price rules
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
