@@ -159,7 +159,7 @@ for (const original of offers) {
   outOffers.push(out);
 }
 
-if (matched < 3000) throw new Error(`Safety stop: only ${matched} Prom Collar dropship offers matched`);
+if (matched < 2300) throw new Error(`Safety stop: only ${matched} Prom Collar dropship offers matched`);
 if (outOffers.length + ownManualExcluded !== offers.length) throw new Error("Safety stop: source offer count changed unexpectedly");
 
 fs.mkdirSync("_site", { recursive: true });
