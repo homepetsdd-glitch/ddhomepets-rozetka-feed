@@ -854,7 +854,27 @@ const collarPhotoChoices = await loadCollarPhotoChoices();
       Number.isSafeInteger(sourceIdNumber) &&
       sourceIdNumber > AUTO_NEW_AFTER_PROM_ID;
 
-    if (!isWhitelisted && !isAutoNew) {
+    // Whitelist/old-ID protection is only for COLLAR-family products.
+    // Ordinary non-COLLAR Prom products must remain in the Rozetka feed even when
+    // their Prom ID predates AUTO_NEW_AFTER_PROM_ID.
+    const offerVendor = (getTagValue(offer, "vendor") || "").trim().toLowerCase();
+    const offerName = (
+      getTagValue(offer, "name_ua") ||
+      getTagValue(offer, "name") ||
+      ""
+    ).toLowerCase();
+    const collarFamilyWordsForFilter = [
+      "collar", "waudog", "waucat", "evolutor", "dog extreme", "dog extremе",
+      "airyvest", "puller", "liker", "flyber", "pitchdog", "superium", "supercat"
+    ];
+    const isCollarFamilyForFilter =
+      offerVendor === "collar" ||
+      offerVendor === "collar company" ||
+      collarFamilyWordsForFilter.some(word =>
+        offerVendor.includes(word) || offerName.includes(word)
+      );
+
+    if (!isWhitelisted && !isAutoNew && isCollarFamilyForFilter) {
       stats.excluded_offers++;
       continue;
     }
