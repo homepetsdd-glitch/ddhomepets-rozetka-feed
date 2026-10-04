@@ -804,6 +804,7 @@ const collarPhotoChoices = await loadCollarPhotoChoices();
     duplicate_target_ids_skipped: 0,
     auto_new_after_prom_id: AUTO_NEW_AFTER_PROM_ID,
     auto_new_offers: 0,
+    excluded_offer_details: [],
   };
 
   // Спочатку збираємо всі OFFERID, які реально є у поточному Prom XML.
@@ -876,6 +877,12 @@ const collarPhotoChoices = await loadCollarPhotoChoices();
 
     if (!isWhitelisted && !isAutoNew && isCollarFamilyForFilter) {
       stats.excluded_offers++;
+      stats.excluded_offer_details.push({
+        id: sourceId,
+        target_id: targetId,
+        vendor: getTagValue(offer, "vendor") || "",
+        name: getTagValue(offer, "name_ua") || getTagValue(offer, "name") || ""
+      });
       continue;
     }
 
