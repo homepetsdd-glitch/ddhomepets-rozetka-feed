@@ -21,6 +21,7 @@ on:
       - "apply-audit-photo-removals.mjs"
       - "excluded-offerids.txt"
       - "apply-offer-exclusions.mjs"
+      - "audit-missing-collar-offers.mjs"
       - "generate-prom-collar-stock.mjs"
       - "apply-price-rules.mjs"
       - "pricecreator-photo-overrides.json"
@@ -104,6 +105,8 @@ jobs:
         run: python3 validate-prices.py
       - name: Guard duplicate photo URLs
         run: python3 validate-photo-duplicates.py
+      - name: Restore missing Collar dropship offers as unavailable
+        run: node audit-missing-collar-offers.mjs
       - name: Validate generated XML
         run: |
           python3 - <<'PY'
@@ -118,8 +121,6 @@ jobs:
           print(f"XML OK: {len(offers)} offers")
           print(json.dumps(stats, ensure_ascii=False, indent=2))
           PY
-      - name: Audit missing Collar offers (report only)
-        run: node audit-missing-collar-offers.mjs
       - name: Copy WAUDOG images to site
         run: |
           mkdir -p _site/waudog-images
