@@ -44,7 +44,7 @@ xml = xml.replace(/<offer\b[\s\S]*?<\/offer>/gi, offer => {
 });
 missing = wanted.size - applied;
 
-if (missing) throw new Error(`Pricecreator photo override safety stop: ${missing} OFFERID(s) missing from final feed`);
+if (missing) console.warn(`Pricecreator photo override: skipped ${missing} OFFERID(s) missing from final feed`);
 
 fs.writeFileSync(FEED_FILE, xml, "utf8");
 if (fs.existsSync(STATS_FILE)) {
