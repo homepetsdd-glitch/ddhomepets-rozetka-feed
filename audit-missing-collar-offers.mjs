@@ -1,5 +1,5 @@
-// REPORT-ONLY: compares the current final XML with the last published one.
-// Never changes _site/feed.xml, stock, availability, prices or photos.
+// Preserve vanished Collar dropship offers as unavailable with zero stock.
+// Never changes prices or photos; own/manual articles remain protected.
 import fs from "node:fs";
 import zlib from "node:zlib";
 const REPORT = "_site/missing-collar-offers-audit.json";
@@ -22,7 +22,7 @@ function offers(xml) {
 }
 const current = offers(currentXml);
 const ids = new Set(current.map(x=>x.id));
-let report = {mode:"report_only", generated_at:new Date().toISOString(), reference:PREVIOUS_URL, current_offers:current.length, warnings:[], missing:[]};
+let report = {mode:"zero_stock_carryover", generated_at:new Date().toISOString(), reference:PREVIOUS_URL, current_offers:current.length, warnings:[], missing:[]};
 try {
   const response = await fetch(PREVIOUS_URL, {headers:{"Cache-Control":"no-cache"}});
   if (!response.ok) throw new Error("Previous feed HTTP " + response.status);
@@ -57,4 +57,4 @@ if (!report.warnings.length && report.missing.length > 0) {
   console.log("Restored missing Collar dropship offers with ZERO stock:",rescued.length);
 }
 fs.writeFileSync(REPORT, JSON.stringify(report,null,2)+"\n","utf8");
-console.log("REPORT ONLY - no availability changes. Missing Collar offers:",report.missing.length,"warnings:",report.warnings.join("; "));
+console.log("Missing Collar offers audited:",report.missing.length,"warnings:",report.warnings.join("; "));
