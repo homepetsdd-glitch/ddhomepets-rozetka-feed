@@ -118,6 +118,8 @@ jobs:
           print(f"XML OK: {len(offers)} offers")
           print(json.dumps(stats, ensure_ascii=False, indent=2))
           PY
+      - name: Audit missing Collar offers (report only)
+        run: node audit-missing-collar-offers.mjs
       - name: Copy WAUDOG images to site
         run: |
           mkdir -p _site/waudog-images
