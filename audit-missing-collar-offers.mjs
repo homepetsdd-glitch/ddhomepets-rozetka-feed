@@ -13,6 +13,7 @@ function tag(xml, name) {
   const m = xml.match(new RegExp("<" + name + "\\b[^>]*>([\\s\\S]*?)<\\/" + name + ">", "i"));
   return m ? m[1].replace(/^<!\[CDATA\[/, "").replace(/\]\]>$/, "").trim() : "";
 }
+function blocks(xml) { return xml.match(/<offer\b[\s\S]*?<\/offer>/gi) || []; }
 function offers(xml) {
   return (xml.match(/<offer\b[\s\S]*?<\/offer>/gi) || []).map(block => {
     const m = block.match(/<offer\b[^>]*\bid=(["'])([^"']+)\1/i);
@@ -32,6 +33,28 @@ try {
   if (report.missing.length > 100) report.warnings.push("More than 100 offers missing: investigate source completeness before any action.");
 } catch (e) {
   report.warnings.push("Comparison unavailable: " + String(e.message || e));
+}
+if (!report.warnings.length && report.missing.length > 0) {
+  if (report.missing.length > 100) throw new Error("Safety stop: too many missing Collar offers");
+  const prevResponse = await fetch(PREVIOUS_URL);
+  if (!prevResponse.ok) throw new Error("Previous feed cannot be fetched for restoration");
+  const previousBlocks = blocks(await prevResponse.text());
+  const missingIds = new Set(report.missing.map(x=>x.id));
+  const rescued = previousBlocks.filter(block => {
+    const id=(block.match(/<offer\b[^>]*\bid=["']([^"']+)["']/i)||[])[1];
+    return id && missingIds.has(id);
+  }).map(block => {
+    let x=block.replace(/(<offer\b[^>]*\bavailable\s*=\s*)["'][^"']*["']/i,'$1"false"');
+    if(!/<offer\b[^>]*\bavailable\s*=/i.test(x)) x=x.replace(/<offer\b/,'<offer available="false"');
+    if(/<stock_quantity\b[^>]*>[\s\S]*?<\/stock_quantity>/i.test(x)) x=x.replace(/<stock_quantity\b[^>]*>[\s\S]*?<\/stock_quantity>/i,'<stock_quantity>0</stock_quantity>');
+    else x=x.replace(/<\/offer>/i,'<stock_quantity>0</stock_quantity></offer>');
+    return x;
+  });
+  if(rescued.length!==missingIds.size) throw new Error("Missing offer restoration incomplete");
+  if(!/<\/offers>/i.test(currentXml)) throw new Error("Cannot find closing offers tag");
+  fs.writeFileSync("_site/feed.xml", currentXml.replace(/<\/offers>/i, rescued.join("\n")+"\n</offers>"),"utf8");
+  report.restored_as_unavailable=rescued.length;
+  console.log("Restored missing Collar dropship offers with ZERO stock:",rescued.length);
 }
 fs.writeFileSync(REPORT, JSON.stringify(report,null,2)+"\n","utf8");
 console.log("REPORT ONLY - no availability changes. Missing Collar offers:",report.missing.length,"warnings:",report.warnings.join("; "));
