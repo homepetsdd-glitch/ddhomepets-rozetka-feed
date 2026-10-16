@@ -1796,8 +1796,10 @@ const collarPhotoGallery = buildCollarPhotoGallery(collarPhotoReport);  // Мі�
   if (!xml.includes("<offers>") || !xml.includes("</offers>")) {
     throw new Error("Generated XML has no <offers> block");
   }
-  if (stats.generated_offers < 3000) {
-    throw new Error(`Safety stop: only ${stats.generated_offers} offers generated`);
+  // Allow modest upstream shrinkage before missing Collar offers are safely
+  // carried forward with zero stock. The workflow's final XML guard remains 3000.
+  if (stats.generated_offers < 2900) {
+    throw new Error(`Safety stop: only ${stats.generated_offers} offers generated before zero-stock carryover`);
   }
 
   await mkdir("_site", { recursive: true });
