@@ -27,15 +27,31 @@ try {
   const response = await fetch(PREVIOUS_URL, {headers:{"Cache-Control":"no-cache"}});
   if (!response.ok) throw new Error("Previous feed HTTP " + response.status);
   const previous = offers(await response.text());
-  if (previous.length < 3000 || current.length < 3000) throw new Error("Incomplete feed: previous=" + previous.length + ", current=" + current.length);
+  // The current source can be slightly smaller than 3000 before zero-stock
+  // carryover. The final published feed is still required to have >=3000 offers.
+  if (previous.length < 3000 || current.length < 2900) {
+    throw new Error("Incomplete feed: previous=" + previous.length + ", current=" + current.length);
+  }
   report.previous_offers = previous.length;
-  report.missing = previous.filter(x => !ids.has(x.id) && x.article && dropship.has(x.article) && !own.has(x.article) && !excluded.has(x.id));
-  if (report.missing.length > 100) report.warnings.push("More than 100 offers missing: investigate source completeness before any action.");
+  const missingAll = previous.filter(x => !ids.has(x.id) && !excluded.has(x.id));
+  report.missing_total = missingAll.length;
+  report.missing = missingAll.filter(x => x.article && dropship.has(x.article) && !own.has(x.article));
+  report.missing_unexplained = missingAll.length - report.missing.length;
+  // Abort rather than silently drop too many previously published products.
+  const maxMissing = Math.min(220, Math.ceil(previous.length * 0.07));
+  if (missingAll.length > maxMissing) {
+    throw new Error("Safety stop: " + missingAll.length + " vanished offers exceeds " + maxMissing);
+  }
+  if (report.missing_unexplained > 30) {
+    throw new Error("Safety stop: " + report.missing_unexplained + " missing offers are not eligible for safe zero-stock carryover");
+  }
 } catch (e) {
   report.warnings.push("Comparison unavailable: " + String(e.message || e));
 }
-if (!report.warnings.length && report.missing.length > 0) {
-  if (report.missing.length > 100) throw new Error("Safety stop: too many missing Collar offers");
+if (report.warnings.length) {
+  throw new Error("Cannot safely compare with previous feed: " + report.warnings.join("; "));
+}
+if (report.missing.length > 0) {
   const prevResponse = await fetch(PREVIOUS_URL);
   if (!prevResponse.ok) throw new Error("Previous feed cannot be fetched for restoration");
   const previousBlocks = blocks(await prevResponse.text());
