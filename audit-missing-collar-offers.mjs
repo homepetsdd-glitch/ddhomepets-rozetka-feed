@@ -37,10 +37,30 @@ try {
   report.missing_total = missingAll.length;
   report.missing = missingAll.filter(x => x.article && dropship.has(x.article) && !own.has(x.article));
   report.missing_unexplained = missingAll.length - report.missing.length;
-  // Abort rather than silently drop too many previously published products.
+  // Previous runs intentionally retain vanished Collar dropship offers as
+  // unavailable with stock=0. Do not repeatedly count those safe carryovers
+  // as *new* losses on every subsequent run.
+  const previouslyUnavailable = missingAll.filter(x => !x.available && x.stock === 0);
+  const newlyMissingActive = missingAll.filter(x => x.available || x.stock !== 0);
+  report.previously_unavailable_missing = previouslyUnavailable.length;
+  report.newly_missing_active = newlyMissingActive.length;
+  console.log("Missing offer comparison:", JSON.stringify({
+    previous: previous.length,
+    current: current.length,
+    missing_total: missingAll.length,
+    already_zero_stock: previouslyUnavailable.length,
+    newly_missing_active: newlyMissingActive.length,
+    safe_carryover_eligible: report.missing.length,
+    unexplained: report.missing_unexplained
+  }));
+  // Keep the strict cap for products that were still active in the previous feed.
+  // Every restored offer is still checked against the Collar dropship allowlist,
+  // excluded IDs, and owned stock, and is always restored with zero stock.
   const maxMissing = Math.min(220, Math.ceil(previous.length * 0.07));
-  if (missingAll.length > maxMissing) {
-    throw new Error("Safety stop: " + missingAll.length + " vanished offers exceeds " + maxMissing);
+  if (newlyMissingActive.length > maxMissing) {
+    throw new Error("Safety stop: " + newlyMissingActive.length +
+      " newly vanished active offers exceeds " + maxMissing +
+      " (already unavailable: " + previouslyUnavailable.length + ")");
   }
   if (report.missing_unexplained > 30) {
     throw new Error("Safety stop: " + report.missing_unexplained + " missing offers are not eligible for safe zero-stock carryover");
