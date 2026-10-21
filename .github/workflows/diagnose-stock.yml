@@ -1,0 +1,24 @@
+name: Diagnose stock only
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/diagnose-stock.yml"
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Fetch published XML for comparison
+        run: |
+          mkdir -p _site
+          curl --fail --location --silent --show-error "https://homepetsdd-glitch.github.io/ddhomepets-rozetka-feed/feed.xml" -o _site/feed.xml
+      - name: Compare source and published stock (read-only)
+        env:
+          PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
+        run: node diagnose-stock.mjs
