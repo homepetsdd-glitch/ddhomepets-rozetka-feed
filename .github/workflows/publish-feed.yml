@@ -134,3 +134,4 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+# Republish trigger: fresh run after GitHub Pages HTTP 502 on 2026-10-27.
