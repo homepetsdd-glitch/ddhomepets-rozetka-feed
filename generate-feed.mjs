@@ -1819,8 +1819,15 @@ const collarPhotoGallery = buildCollarPhotoGallery(collarPhotoReport);  // Мі�
     const testId = getOfferId(testOffer);
     if (testId && collarPhotoTestIds.has(String(testId))) testOffers.push(testOffer);
   }
-  if (testOffers.length !== collarPhotoTestIds.size) {
-    throw new Error(`Safety stop: Collar test feed has ${testOffers.length} of ${collarPhotoTestIds.size} expected offers`);
+  // This is an optional photo-review test subset, not a correctness check
+  // for the main Rozetka catalog. Deleted or delisted test items must not
+  // prevent publishing valid prices and stock for all remaining offers.
+  const foundTestIds = new Set(testOffers.map(getOfferId).filter(Boolean));
+  const missingTestIds = [...collarPhotoTestIds].filter(id => !foundTestIds.has(id));
+  if (missingTestIds.length) {
+    console.warn(
+      `Collar photo test feed: ${testOffers.length}/${collarPhotoTestIds.size} selected; missing IDs: ${missingTestIds.join(", ")}. Continuing main feed publication.`
+    );
   }
   const collarPhotoTestXml = testHead + "\n" + testOffers.join("\n") + "\n" + testTail;
   await writeFile("_site/collar-photo-refresh-test.xml", collarPhotoTestXml, "utf8");
