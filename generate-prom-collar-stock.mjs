@@ -352,6 +352,57 @@ for (const originalRaw of offers) {
   futureNewAvailable += 1;
 }
 
+
+// Restore missing mapped Collar items for Prom as unavailable, without relying on
+// Prom's global "items missing from import" setting (which must protect other suppliers).
+// Only a previously published, stable-ID mapped Collar offer is eligible; own/manual
+// stock is never imported. A small cap prevents mass zeroing on a truncated source.
+const PREVIOUS_PROM_FEED_URL = "https://homepetsdd-glitch.github.io/ddhomepets-rozetka-feed/prom-collar-feed.xml";
+let missingRestoredUnavailable = 0;
+let missingPreviousSnapshot = 0;
+let missingRestorationWarning = "";
+
+try {
+  const previousXml = await fetchText(PREVIOUS_PROM_FEED_URL, "Previous Prom Collar feed");
+  const previousOffers = previousXml.match(/<offer\b[\s\S]*?<\/offer>/gi) || [];
+  if (previousOffers.length < 2300) {
+    throw new Error("previous Prom feed too small: " + previousOffers.length);
+  }
+
+  const missingOffers = [];
+  const seenMissingCodes = new Set();
+  for (const previousOffer of previousOffers) {
+    const code = getArticle(previousOffer);
+    if (!code || seenExistingCodes.has(code) || ownManualCodes.has(code)) continue;
+    const previousId = getOfferId(previousOffer);
+    if (!previousId || importIds.get(code) !== previousId) continue;
+    if (usedOutputIds.has(previousId) || seenMissingCodes.has(code)) continue;
+    seenMissingCodes.add(code);
+    missingOffers.push({ code, previousOffer });
+  }
+
+  missingPreviousSnapshot = missingOffers.length;
+  const maxMissingCarryover = Math.min(220, Math.ceil(previousOffers.length * 0.07));
+  if (missingOffers.length > maxMissingCarryover) {
+    throw new Error("missing mapped offers " + missingOffers.length +
+      " exceeds carryover safety cap " + maxMissingCarryover);
+  }
+
+  for (const { code, previousOffer } of missingOffers) {
+    const unavailableOffer = setAvailable(setStockQuantity(previousOffer, 0), false);
+    pushUniqueOffer(unavailableOffer, code);
+    missingRestoredUnavailable += 1;
+  }
+} catch (error) {
+  // An unavailable previous snapshot must not block the separate Rozetka
+  // feed deployment or cause speculative mass stock changes.
+  missingRestorationWarning = String(error?.message || error);
+  console.warn("Prom missing-offer carryover skipped:", missingRestorationWarning);
+}
+console.log("Prom missing mapped Collar offers: previous=" + missingPreviousSnapshot +
+  ", restored_as_unavailable=" + missingRestoredUnavailable +
+  ", warning=" + (missingRestorationWarning || "none"));
+
 if (existingMatched < 2300) {
   throw new Error("Safety stop: only " + existingMatched + " existing Prom Collar products matched stable import IDs");
 }
