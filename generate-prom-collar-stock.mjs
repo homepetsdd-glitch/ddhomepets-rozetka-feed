@@ -324,7 +324,9 @@ for (const originalRaw of offers) {
 
   if (qty <= 0) {
     futureNewUnavailable += 1;
-    continue;
+    // Known Prom listing: keep this already-sold SKU in the feed as unavailable.
+    // Do not generally import new zero-stock products from the Collar catalog.
+    if (code !== "190822" || price === null) continue;
   }
   if (price === null) {
     invalidNewPrice += 1;
@@ -346,10 +348,10 @@ for (const originalRaw of offers) {
 
   let out = makePromSafeOfferName(originalRaw);
   out = setCategoryId(out, TECH_CATEGORY_ID);
-  out = setStockQuantity(setAvailable(out, true), qty);
+  out = setStockQuantity(setAvailable(out, qty > 0), qty);
   out = setPrice(out, price);
   pushUniqueOffer(out, code);
-  futureNewAvailable += 1;
+  if (qty > 0) futureNewAvailable += 1;
 }
 
 
@@ -424,9 +426,11 @@ try {
     throw new Error("Prom source unexpectedly small: " + promOffers.length);
   }
   const missingMapped = new Map();
+  const missingMappedByCode = new Map();
   for (const [code, id] of importIds.entries()) {
     if (seenExistingCodes.has(code) || ownManualCodes.has(code) || usedOutputIds.has(id)) continue;
     missingMapped.set(id, code);
+    missingMappedByCode.set(code, id);
   }
   if (missingMapped.size > 450) {
     throw new Error("Too many missing mapped codes: " + missingMapped.size);
@@ -448,7 +452,8 @@ try {
       promMappedIdSeen++;
       if (missingMapped.get(id) !== code) promMappedIdArticleMismatch++;
     }
-    if (!id || missingMapped.get(id) !== code || usedOutputIds.has(id)) continue;
+    const mappedId = missingMappedByCode.get(code);
+    if (!mappedId || usedOutputIds.has(mappedId)) continue;
     promMissingExactMatch++;
     if (ownManualCodes.has(code) || !dropshipCodes.has(code)) {
       promMissingAllowlistExcluded++;
@@ -459,7 +464,7 @@ try {
       promMissingNoPrice++;
       continue;
     }
-    eligible.push({ code, original });
+    eligible.push({ code, original, mappedId });
   }
   console.log("Prom missing-Collar match diagnostics: prom_offers=" + promOffers.length +
     ", missing_map=" + missingMapped.size +
@@ -474,13 +479,18 @@ try {
       supplier: collarCatalog.get("190822") || null,
       missing_map: missingCodes.has("190822")
     }));
-  const distinct = new Set(eligible.map(x => getOfferId(x.original)));
+  const distinct = new Set(eligible.map(x => x.mappedId));
   if (distinct.size !== eligible.length) {
     throw new Error("Duplicate stable IDs in Prom source missing-Collar recovery");
   }
+  if (eligible.length > 150) {
+    throw new Error("Too many article-matched missing Collar offers: " + eligible.length);
+  }
   mappedAbsentEligible = eligible.length;
-  for (const { code, original } of eligible) {
-    let out = setCategoryId(original, TECH_CATEGORY_ID);
+  for (const { code, original, mappedId } of eligible) {
+    // Use the exact import ID already established for this Collar article.
+    let out = setOfferId(original, mappedId);
+    out = setCategoryId(out, TECH_CATEGORY_ID);
     out = setStockQuantity(setAvailable(out, false), 0);
     pushUniqueOffer(out, code);
     mappedAbsentRecovered += 1;
