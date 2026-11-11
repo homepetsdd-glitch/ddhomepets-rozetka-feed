@@ -353,10 +353,11 @@ for (const originalRaw of offers) {
 }
 
 
-// Restore missing mapped Collar items for Prom as unavailable, without relying on
+// Restore previously published Collar items (mapped and future-new) as unavailable, without relying on
 // Prom's global "items missing from import" setting (which must protect other suppliers).
-// Only a previously published, stable-ID mapped Collar offer is eligible; own/manual
-// stock is never imported. A small cap prevents mass zeroing on a truncated source.
+// Only previously published Collar offers with verified identities are eligible;
+// own/manual stock and pre-baseline ignored codes remain protected.
+// A small cap prevents mass zeroing on a truncated source.
 const PREVIOUS_PROM_FEED_URL = "https://homepetsdd-glitch.github.io/ddhomepets-rozetka-feed/prom-collar-feed.xml";
 let missingRestoredUnavailable = 0;
 let missingPreviousSnapshot = 0;
@@ -375,7 +376,11 @@ try {
     const code = getArticle(previousOffer);
     if (!code || seenExistingCodes.has(code) || ownManualCodes.has(code)) continue;
     const previousId = getOfferId(previousOffer);
-    if (!previousId || importIds.get(code) !== previousId) continue;
+    if (!previousId) continue;
+    const mappedId = importIds.get(code);
+    // Existing mapped codes must retain their stable import IDs. A genuine
+    // future-new code has no map entry and must not be in the baseline-ignore set.
+    if (mappedId ? mappedId !== previousId : baselineIgnoredCodes.has(code) || mappedImportIds.has(previousId)) continue;
     if (usedOutputIds.has(previousId) || seenMissingCodes.has(code)) continue;
     seenMissingCodes.add(code);
     missingOffers.push({ code, previousOffer });
@@ -384,7 +389,7 @@ try {
   missingPreviousSnapshot = missingOffers.length;
   const maxMissingCarryover = Math.min(220, Math.ceil(previousOffers.length * 0.07));
   if (missingOffers.length > maxMissingCarryover) {
-    throw new Error("missing mapped offers " + missingOffers.length +
+    throw new Error("missing previously published Collar offers " + missingOffers.length +
       " exceeds carryover safety cap " + maxMissingCarryover);
   }
 
@@ -399,7 +404,7 @@ try {
   missingRestorationWarning = String(error?.message || error);
   console.warn("Prom missing-offer carryover skipped:", missingRestorationWarning);
 }
-console.log("Prom missing mapped Collar offers: previous=" + missingPreviousSnapshot +
+console.log("Prom missing previously published Collar offers: previous=" + missingPreviousSnapshot +
   ", restored_as_unavailable=" + missingRestoredUnavailable +
   ", warning=" + (missingRestorationWarning || "none"));
 
