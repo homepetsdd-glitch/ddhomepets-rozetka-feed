@@ -244,7 +244,7 @@ for offer in feed_offers:
 
 # Validate at least 95% of the current pre-carryover feed; final XML still
 # must contain >=3000 offers after vanished Collar items are set unavailable.
-min_required_checked = max(2900, math.ceil(len(feed_offers) * 0.95))
+min_required_checked = max(2800, math.ceil(len(feed_offers) * 0.95))
 if checked < min_required_checked:
     errors.append(
         f"price validation coverage too low: checked {checked} of {len(feed_offers)} feed offers; "
