@@ -1798,7 +1798,7 @@ const collarPhotoGallery = buildCollarPhotoGallery(collarPhotoReport);  // Мі�
   }
   // Allow modest upstream shrinkage before missing Collar offers are safely
   // carried forward with zero stock. The workflow's final XML guard remains 3000.
-  if (stats.generated_offers < 2900) {
+  if (stats.generated_offers < 2800) {
     throw new Error(`Safety stop: only ${stats.generated_offers} offers generated before zero-stock carryover`);
   }
 
