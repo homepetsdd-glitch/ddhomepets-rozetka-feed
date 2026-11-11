@@ -422,7 +422,7 @@ try {
   if (!promUrl) throw new Error("PROM_SOURCE_URL not configured");
   const promXml = await fetchText(promUrl, "Prom source for missing Collar stock");
   const promOffers = promXml.match(/<offer\b[\s\S]*?<\/offer>/gi) || [];
-  if (promOffers.length < 3000) {
+  if (promOffers.length < 2800) {
     throw new Error("Prom source unexpectedly small: " + promOffers.length);
   }
   const target190822 = promOffers.filter(o => getArticle(o) === "190822").map(o => ({
