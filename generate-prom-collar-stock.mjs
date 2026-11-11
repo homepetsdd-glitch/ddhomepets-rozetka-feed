@@ -433,6 +433,24 @@ try {
     available: /<offer\\b[^>]*\\bavailable=["']true["']/i.test(o)
   }));
   console.log("Prom target article 190822 source diagnostic:", JSON.stringify(target190822.slice(0, 5)));
+  // Explicit known Collar listing confirmed in the Prom source on 2026-11-11.
+  // It is absent from the legacy ID map and can disappear from a fresh supplier
+  // feed. Keep the same Prom product ID, but NEVER invent positive inventory.
+  const targetCode = "190822";
+  const targetId = "3194759586";
+  const current190822 = collarCatalog.get(targetCode);
+  const current190822Qty = Math.max(0, Math.floor(Number(current190822?.qty) || 0));
+  if (!usedOutputIds.has(targetId) && current190822Qty <= 4 && !ownManualCodes.has(targetCode)) {
+    const sourceMatches = promOffers.filter(o => getOfferId(o) === targetId && getArticle(o) === targetCode);
+    if (sourceMatches.length === 1) {
+      let safeOffer = setCategoryId(sourceMatches[0], TECH_CATEGORY_ID);
+      safeOffer = setStockQuantity(setAvailable(safeOffer, false), 0);
+      pushUniqueOffer(safeOffer, targetCode);
+      console.log("Prom 190822 safety override: ID " + targetId + " published with zero stock");
+    } else {
+      console.warn("Prom 190822 safety override skipped: matching source offers=" + sourceMatches.length);
+    }
+  }
   const missingMapped = new Map();
   const missingMappedByCode = new Map();
   for (const [code, id] of importIds.entries()) {
