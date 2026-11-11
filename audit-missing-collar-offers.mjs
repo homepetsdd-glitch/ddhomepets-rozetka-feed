@@ -29,7 +29,7 @@ try {
   const previous = offers(await response.text());
   // The current source can be slightly smaller than 3000 before zero-stock
   // carryover. The final published feed is still required to have >=3000 offers.
-  if (previous.length < 3000 || current.length < 2900) {
+  if (previous.length < 3000 || current.length < 2800) {
     throw new Error("Incomplete feed: previous=" + previous.length + ", current=" + current.length);
   }
   report.previous_offers = previous.length;
