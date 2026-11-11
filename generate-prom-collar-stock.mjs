@@ -433,15 +433,47 @@ try {
   }
 
   const eligible = [];
+  let promMappedIdSeen = 0;
+  let promMappedIdArticleMismatch = 0;
+  let promMissingCodeSeen = 0;
+  let promMissingExactMatch = 0;
+  let promMissingAllowlistExcluded = 0;
+  let promMissingNoPrice = 0;
+  const missingCodes = new Set(missingMapped.values());
   for (const original of promOffers) {
     const id = getOfferId(original);
     const code = getArticle(original);
+    if (missingCodes.has(code)) promMissingCodeSeen++;
+    if (missingMapped.has(id)) {
+      promMappedIdSeen++;
+      if (missingMapped.get(id) !== code) promMappedIdArticleMismatch++;
+    }
     if (!id || missingMapped.get(id) !== code || usedOutputIds.has(id)) continue;
-    if (ownManualCodes.has(code) || !dropshipCodes.has(code)) continue;
+    promMissingExactMatch++;
+    if (ownManualCodes.has(code) || !dropshipCodes.has(code)) {
+      promMissingAllowlistExcluded++;
+      continue;
+    }
     const price = parseNumber(getTag(original, "price"));
-    if (price === null || price <= 0) continue;
+    if (price === null || price <= 0) {
+      promMissingNoPrice++;
+      continue;
+    }
     eligible.push({ code, original });
   }
+  console.log("Prom missing-Collar match diagnostics: prom_offers=" + promOffers.length +
+    ", missing_map=" + missingMapped.size +
+    ", id_seen=" + promMappedIdSeen +
+    ", id_article_mismatch=" + promMappedIdArticleMismatch +
+    ", code_seen=" + promMissingCodeSeen +
+    ", exact=" + promMissingExactMatch +
+    ", allowlist_excluded=" + promMissingAllowlistExcluded +
+    ", invalid_price=" + promMissingNoPrice +
+    ", example_190822=" + JSON.stringify({
+      mapped_id: importIds.get("190822") || "none",
+      supplier: collarCatalog.get("190822") || null,
+      missing_map: missingCodes.has("190822")
+    }));
   const distinct = new Set(eligible.map(x => getOfferId(x.original)));
   if (distinct.size !== eligible.length) {
     throw new Error("Duplicate stable IDs in Prom source missing-Collar recovery");
