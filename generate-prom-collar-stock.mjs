@@ -408,6 +408,59 @@ console.log("Prom missing previously published Collar offers: previous=" + missi
   ", restored_as_unavailable=" + missingRestoredUnavailable +
   ", warning=" + (missingRestorationWarning || "none"));
 
+
+// Recover mapped Collar products from the authoritative Prom source when Collar
+// no longer lists them. Match BOTH stable import ID and vendor code; never use
+// unrelated items, own/manual stock, or speculative old positive quantities.
+let mappedAbsentRecovered = 0;
+let mappedAbsentEligible = 0;
+let mappedAbsentRecoveryWarning = "";
+try {
+  const promUrl = String(process.env.PROM_SOURCE_URL || "").trim();
+  if (!promUrl) throw new Error("PROM_SOURCE_URL not configured");
+  const promXml = await fetchText(promUrl, "Prom source for missing Collar stock");
+  const promOffers = promXml.match(/<offer\b[\s\S]*?<\/offer>/gi) || [];
+  if (promOffers.length < 3000) {
+    throw new Error("Prom source unexpectedly small: " + promOffers.length);
+  }
+  const missingMapped = new Map();
+  for (const [code, id] of importIds.entries()) {
+    if (seenExistingCodes.has(code) || ownManualCodes.has(code) || usedOutputIds.has(id)) continue;
+    missingMapped.set(id, code);
+  }
+  if (missingMapped.size > 450) {
+    throw new Error("Too many missing mapped codes: " + missingMapped.size);
+  }
+
+  const eligible = [];
+  for (const original of promOffers) {
+    const id = getOfferId(original);
+    const code = getArticle(original);
+    if (!id || missingMapped.get(id) !== code || usedOutputIds.has(id)) continue;
+    if (ownManualCodes.has(code) || !dropshipCodes.has(code)) continue;
+    const price = parseNumber(getTag(original, "price"));
+    if (price === null || price <= 0) continue;
+    eligible.push({ code, original });
+  }
+  const distinct = new Set(eligible.map(x => getOfferId(x.original)));
+  if (distinct.size !== eligible.length) {
+    throw new Error("Duplicate stable IDs in Prom source missing-Collar recovery");
+  }
+  mappedAbsentEligible = eligible.length;
+  for (const { code, original } of eligible) {
+    let out = setCategoryId(original, TECH_CATEGORY_ID);
+    out = setStockQuantity(setAvailable(out, false), 0);
+    pushUniqueOffer(out, code);
+    mappedAbsentRecovered += 1;
+  }
+} catch (error) {
+  mappedAbsentRecoveryWarning = String(error?.message || error);
+  console.warn("Prom missing mapped Collar stock recovery skipped:", mappedAbsentRecoveryWarning);
+}
+console.log("Prom missing mapped Collar recovery: eligible=" + mappedAbsentEligible +
+  ", restored_as_unavailable=" + mappedAbsentRecovered +
+  ", warning=" + (mappedAbsentRecoveryWarning || "none"));
+
 if (existingMatched < 2300) {
   throw new Error("Safety stop: only " + existingMatched + " existing Prom Collar products matched stable import IDs");
 }
