@@ -425,6 +425,14 @@ try {
   if (promOffers.length < 3000) {
     throw new Error("Prom source unexpectedly small: " + promOffers.length);
   }
+  const target190822 = promOffers.filter(o => getArticle(o) === "190822").map(o => ({
+    source_id: getOfferId(o),
+    code: getArticle(o),
+    price: getTag(o, "price"),
+    quantity: getTag(o, "quantity_in_stock") || getTag(o, "quantity"),
+    available: /<offer\\b[^>]*\\bavailable=["']true["']/i.test(o)
+  }));
+  console.log("Prom target article 190822 source diagnostic:", JSON.stringify(target190822.slice(0, 5)));
   const missingMapped = new Map();
   const missingMappedByCode = new Map();
   for (const [code, id] of importIds.entries()) {
