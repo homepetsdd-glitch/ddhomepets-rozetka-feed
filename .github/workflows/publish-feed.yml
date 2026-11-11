@@ -70,16 +70,16 @@ jobs:
           const response = await fetch(url);
           if (!response.ok) throw new Error("Prom source HTTP " + response.status);
           const xml = await response.text();
-          const offers = xml.match(/<offer\\b[\\s\\S]*?<\\/offer>/gi) || [];
-          const tag = (o, name) => (o.match(new RegExp("<"+name+"\\\\b[^>]*>([\\\\s\\\\S]*?)<\\\\/"+name+">", "i")) || [,""])[1].replace(/^<!\\[CDATA\\[/,"").replace(/\\]\\]>$/,"").trim();
+          const offers = xml.match(/<offer\b[\s\S]*?<\/offer>/gi) || [];
+          const tag = (o, name) => (o.match(new RegExp("<"+name+"\\b[^>]*>([\\s\\S]*?)<\\/"+name+">","i")) || [,""])[1].replace(/^<!\[CDATA\[/,"").replace(/\]\]>$/,"").trim();
           const matching = offers.filter(o => ["vendorCode","article","code"].some(k => tag(o,k)==="190822"));
           const items = matching.map(o => ({
-            id: (o.match(/<offer\\b[^>]*\\bid=["']([^"']+)/i) || [,""])[1],
+            id: (o.match(/<offer\b[^>]*\bid=["']([^"']+)/i) || [,""])[1],
             vendorCode: tag(o,"vendorCode"),
             article: tag(o,"article"),
             code: tag(o,"code"),
             quantity: tag(o,"quantity_in_stock") || tag(o,"quantity"),
-            available: (o.match(/<offer\\b[^>]*\\bavailable=["']([^"']+)/i) || [,""])[1]
+            available: (o.match(/<offer\b[^>]*\bavailable=["']([^"']+)/i) || [,""])[1]
           }));
           console.log("PROM_190822_DIAGNOSTIC",JSON.stringify({offers:offers.length,items}));
           NODE
