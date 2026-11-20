@@ -154,10 +154,13 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
+          name: pages-${{ github.run_id }}-${{ github.run_attempt }}
           path: _site
       - name: Wait for Pages artifact registration
         run: sleep 30
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: pages-${{ github.run_id }}-${{ github.run_attempt }}
 # Republish trigger: fresh run after GitHub Pages HTTP 502 on 2026-10-27.
