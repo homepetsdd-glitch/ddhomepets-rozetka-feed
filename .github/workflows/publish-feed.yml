@@ -35,6 +35,7 @@ on:
     - cron: "7 * * * *"
 
 permissions:
+  actions: read
   contents: read
   pages: write
   id-token: write
@@ -154,6 +155,8 @@ jobs:
         uses: actions/upload-pages-artifact@v4
         with:
           path: _site
+      - name: Wait for Pages artifact registration
+        run: sleep 30
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
