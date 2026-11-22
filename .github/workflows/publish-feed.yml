@@ -108,12 +108,34 @@ jobs:
       - name: Permanently exclude blocked offers
         env:
           COLLAR_SOURCE_URL: ${{ secrets.COLLAR_SOURCE_URL }}
-        run: node apply-offer-exclusions.mjs
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if node apply-offer-exclusions.mjs; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Collar source still unavailable after 5 attempts; stopping safely."
+              exit 1
+            fi
+            echo "Collar request failed (attempt $attempt/5). Retrying in 20 seconds..."
+            sleep 20
+          done
       - name: Generate Prom Collar stock feed
         env:
           PROM_SOURCE_URL: ${{ secrets.PROM_SOURCE_URL }}
           COLLAR_SOURCE_URL: ${{ secrets.COLLAR_SOURCE_URL }}
-        run: node generate-prom-collar-stock.mjs
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if node generate-prom-collar-stock.mjs; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Collar source still unavailable after 5 attempts; stopping safely."
+              exit 1
+            fi
+            echo "Collar request failed (attempt $attempt/5). Retrying in 20 seconds..."
+            sleep 20
+          done
 
       - name: Apply final Rozetka price rules
         env:
